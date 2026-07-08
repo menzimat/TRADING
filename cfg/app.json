@@ -1,0 +1,8 @@
+{
+"app_ip": "127.0.0.1",
+"app_port": 55665,
+"token_path": "./tokens/token.json",
+"tickers_file": "./cfg/tickers.txt",
+"keepass_config": "./cfg/config.json"
+}
+

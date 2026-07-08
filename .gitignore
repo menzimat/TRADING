@@ -1,0 +1,13 @@
+*.txt
+gui.py
+test.py
+certs/*.crt
+certs/*.key
+certs/make_self_signed_cert
+cfg/config.json
+settings.json
+*.pyc
+__pycache__/
+tokens/
+.vscode/settings.json
+trading_app.egg-info/
