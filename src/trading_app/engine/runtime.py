@@ -122,7 +122,6 @@ class Runtime:
 
         self.thread.start()
 
-
         #
         # Begin Tk polling
         #
@@ -206,9 +205,7 @@ class Runtime:
 
             try:
 
-                self.gui_queue.put_nowait(
-                    event
-                )
+                self.gui_queue.put_nowait(event)
 
             except queue.Full:
 
@@ -221,27 +218,30 @@ class Runtime:
                 pass
 
 
-    async def system_listener(
-        self,
-    ):
+    async def system_listener(self):
 
         async for event in (
             self.bus.subscribe_system()
         ):
 
-            self.gui_queue.put(
-                event
-            )
+            if event.name == "PRICE_UPDATED":
 
+                self.gui_queue.put(event)
+
+            elif event.name in (
+                "CONNECTED",
+                "DISCONNECTED",
+                "STREAM_ERROR",
+            ):
+
+                self.gui_queue.put(event)
 
 
     # ==========================================================
     # Async -> Tk bridge
     # ==========================================================
 
-    def _poll_gui_queue(
-        self,
-    ):
+    def _poll_gui_queue(self,):
 
         if not self.gui:
 
@@ -265,14 +265,10 @@ class Runtime:
 
         if self.running:
 
-            self.gui.root.after(
-                50,
-                self._poll_gui_queue,
-            )
+            self.gui.root.after(50, self._poll_gui_queue,)
 
 
-
-    def _handle_gui_event(self,event,):
+    def _handle_gui_event(self, event):
 
         """
         Translate backend events
@@ -280,84 +276,30 @@ class Runtime:
         """
 
         #
-        # -------------------------------------------------
-        # Market events
-        # -------------------------------------------------
+        # Quote updates
         #
+        print("_handle_gui_event:", type(event), event)
+        if isinstance(event, SystemEvent):
 
-        if hasattr(
-            event,
-            "payload",
-        ):
+            if event.name == "PRICE_UPDATED":
 
-            payload = event.payload
-            print("RUNTIME:", payload)
-
-            #
-            # Quote payloads are dictionaries
-            #
-
-            #
-            # Quote events always contain a symbol.
-            # Ask the StateEngine for the latest merged QuoteState.
-            #
-
-            symbol = getattr(payload, "symbol", None)
-
-            if symbol is None and isinstance(payload, dict):
-                symbol = payload.get("symbol")
-
-            if symbol:
-
-                quote = self.state_engine.get_quote(symbol)
-
-                if quote is not None:
-
-                    print("RUNTIME:", quote)
-
-                    self.gui.update_quote(
-                        symbol,
-                        quote,
-                    )
-
-                return
-
-
-
-            #
-            # Future dataclass payloads
-            #
-
-            if hasattr(
-                payload,
-                "symbol",
-            ):
+                payload = event.payload
 
                 self.gui.update_quote(
-                    payload.symbol,
+                    payload["symbol"],
                     payload,
                 )
 
                 return
 
 
-
-        #
-        # -------------------------------------------------
-        # System events
-        # -------------------------------------------------
-        #
-
-        if isinstance(
-            event,
-            SystemEvent,
-        ):
-
-            if event.name == "CONNECTED":
+            elif event.name == "CONNECTED":
 
                 self.gui.set_connection_status(
                     "Connected"
                 )
+
+                return
 
 
             elif event.name == "DISCONNECTED":
@@ -366,6 +308,8 @@ class Runtime:
                     "Disconnected"
                 )
 
+                return
+
 
             elif event.name == "STREAM_ERROR":
 
@@ -373,6 +317,22 @@ class Runtime:
                     "Stream Error"
                 )
 
+                return
+
+
+        #
+        # Future dataclass payloads
+        #
+
+        payload = getattr(event, "payload", None)
+
+        if hasattr(payload, "symbol"):
+
+            self.gui.update_quote(
+                payload.symbol,
+                payload,
+            )
+        return
 
 
     # ==========================================================

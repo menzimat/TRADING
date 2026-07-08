@@ -223,31 +223,30 @@ class StateEngine:
         # Save previous last price before merge.
         #
 
-        old_price = current.last
+        changed = False
 
-        if "bid" in quote:
+        if "bid" in quote and quote["bid"] != current.bid:
             current.bid = quote["bid"]
+            changed = True
 
-        if "ask" in quote:
+        if "ask" in quote and quote["ask"] != current.ask:
             current.ask = quote["ask"]
+            changed = True
 
-        if "last" in quote:
+        if "last" in quote and quote["last"] != current.last:
             current.last = quote["last"]
+            changed = True
 
-        if "volume" in quote:
+        if "volume" in quote and quote["volume"] != current.volume:
             current.volume = quote["volume"]
+            changed = True
+
 
         #
         # Determine whether last price changed.
         #
 
-        new_price = current.last
-
-        if (
-            old_price is not None
-            and new_price is not None
-            and old_price != new_price
-        ):
+        if changed:
 
             await self.bus.publish_system(
                 SystemEvent(
