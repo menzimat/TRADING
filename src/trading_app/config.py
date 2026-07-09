@@ -16,29 +16,18 @@ from pathlib import Path
 DEFAULTS = {
 
     "app_ip": "127.0.0.1",
-
     "app_port": 55665,
-
     "socket_path": "/tmp/schwab.sock",
-
     "token_path": "./tokens/token.json",
-
     "tickers_file": "./cfg/tickers.txt",
-
+    "trading_config": "./cfg/trading.yaml",
     "keepass_config": "./cfg/config.json",
-
     "quote_refresh_ms": 20,
-
     "market_queue_size": 1000,
-
     "command_queue_size": 200,
-
     "review_orders": True,
-
     "default_buy_offset": 0.10,
-
     "default_sell_offset": 0.10,
-
     "default_stop_offset": 0.40
 
 }
@@ -56,6 +45,8 @@ class AppConfig:
     token_path: str
 
     tickers_file: str
+
+    trading_config: str
 
     keepass_config: str
 
@@ -99,7 +90,10 @@ class AppConfig:
             )
 
         return cls(**cfg)
-    
+        
+    def get_trading_config_path(self):
+        return Path(self.trading_config).resolve()
+
     def get_keepass_config_path(self):
         return Path( self.keepass_config ).resolve()
     

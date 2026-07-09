@@ -1,6 +1,5 @@
 import asyncio
 import threading
-import time
 import httpx
 from enum import Enum, auto
 from pynput import keyboard
@@ -8,7 +7,6 @@ from pynput import keyboard
 #from trading_app.HK_gui import run
 from trading_app.shared_state import state
 from trading_app.config import AppConfig
-from trading_app.bus import bus
 
 cfg = AppConfig()
 

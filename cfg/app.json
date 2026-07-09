@@ -3,6 +3,7 @@
 "app_port": 55665,
 "token_path": "./tokens/token.json",
 "tickers_file": "./cfg/tickers.txt",
+"trading_config": "./cfg/trading.yaml",
 "keepass_config": "./cfg/config.json"
 }
 

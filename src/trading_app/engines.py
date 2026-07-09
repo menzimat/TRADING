@@ -48,6 +48,7 @@ from trading_app.gui.application import (
 )
 
 from trading_app.config import AppConfig
+from trading_app.trading_config import TradingConfig
 
 class Engine:
     """
@@ -66,6 +67,8 @@ class Engine:
         #
 
         self.config = AppConfig.load()
+
+        self.trading_cfg = TradingConfig.load(self.config.get_trading_config_path())
 
         self.client = get_easy_client(
             str(self.config.keepass_config))

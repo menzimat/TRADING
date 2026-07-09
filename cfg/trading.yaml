@@ -1,0 +1,181 @@
+# ============================================================
+# Trading Configuration
+#
+# Central configuration for order entry defaults,
+# price offsets, hotkey mappings, and reusable templates.
+#
+# TIF Notes
+# ---------
+# DAY
+#     Normal regular-market trading (current default)
+#
+# DAY_EXT
+#     Day + extended hours (premarket/after-hours)
+#
+# GTC
+#     Good Till Cancelled
+#
+# GTC_EXT
+#     GTC including extended hours
+#
+# For now we default to DAY while developing.
+# ============================================================
+
+
+defaults:
+
+  account: default
+
+  quantity:
+    type: fixed          # fixed | risk | percent
+    value: 100
+
+  tif: DAY
+
+  order_type: LIMIT
+
+  price_basis: ask       # ask | bid | market
+
+  price_offset: default
+
+
+# ------------------------------------------------------------
+# Named price offsets
+# ------------------------------------------------------------
+
+price_offsets:
+
+  default:
+    value: 0.10
+    units: dollars       # dollars | percent | ticks
+
+  aggressive:
+    value: 0.02
+    units: dollars
+
+  passive:
+    value: -0.05
+    units: dollars
+
+  market:
+    value: 0
+    units: dollars
+
+
+# ------------------------------------------------------------
+# Hotkey bindings
+#
+# Each hotkey invokes one template.
+# ------------------------------------------------------------
+
+hotkeys:
+
+  ctrl+b: buy_limit
+
+  ctrl+s: sell_limit
+
+  shift+f: flatten
+
+  esc: cancel_all
+
+  ctrl+shift+q: panic
+
+  ctrl+shift+u: refresh_quotes
+
+
+# ------------------------------------------------------------
+# Reusable order templates
+# ------------------------------------------------------------
+
+templates:
+
+  buy_limit:
+
+    side: BUY
+
+    order_type: LIMIT
+
+    quantity:
+      type: fixed
+      value: 100
+
+    price:
+
+      basis: ask
+
+      offset: default
+
+    tif: DAY
+
+
+  sell_limit:
+
+    side: SELL
+
+    order_type: LIMIT
+
+    quantity:
+      type: fixed
+      value: 100
+
+    price:
+
+      basis: bid
+
+      offset: default
+
+    tif: DAY
+
+
+  buy_market:
+
+    side: BUY
+
+    order_type: MARKET
+
+    quantity:
+      type: fixed
+      value: 100
+
+    price:
+
+      basis: market
+
+    tif: DAY
+
+
+  sell_market:
+
+    side: SELL
+
+    order_type: MARKET
+
+    quantity:
+      type: fixed
+      value: 100
+
+    price:
+
+      basis: market
+
+    tif: DAY
+
+
+  flatten:
+
+    action: FLATTEN
+
+
+  cancel_all:
+
+    action: CANCEL_ALL
+
+
+  panic:
+
+    action: PANIC_EXIT
+
+
+  refresh_quotes:
+
+    action: REFRESH_QUOTES
