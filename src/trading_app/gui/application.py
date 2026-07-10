@@ -215,6 +215,9 @@ class TradingApplication:
         )
 
 
+    def get_selected_symbol(self):
+        return self.order_panel.get_symbol()
+
     def _order_request(
         self,
         request,

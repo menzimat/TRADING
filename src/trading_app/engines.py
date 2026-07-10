@@ -49,6 +49,7 @@ from trading_app.gui.application import (
 
 from trading_app.config import AppConfig
 from trading_app.trading_config import TradingConfig
+from trading_app.services.order_factory import OrderFactory
 
 class Engine:
     """
@@ -122,8 +123,8 @@ class Engine:
                 self.command_processor,
             state_engine=
                 self.state_engine,
+            order_factory=None,
         )
-
 
         #
         # -------------------------------------------------
@@ -142,12 +143,19 @@ class Engine:
                 self.stop_backend,
         )
 
+        self.runtime.attach_gui(self.gui)
 
-        self.runtime.attach_gui(
-            self.gui
+
+        #
+        # OrderFactory is a service that builds OrderRequest objects from GUI input.
+        #
+
+        self.order_factory = OrderFactory(
+            config=self.trading_cfg,
+            state_engine=self.state_engine,
+            symbol_provider=self.gui,
         )
-
-
+        self.runtime.order_factory = self.order_factory
 
     # =====================================================
     # Lifecycle

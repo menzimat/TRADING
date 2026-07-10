@@ -48,6 +48,7 @@ class Runtime:
         streamer,
         command_processor,
         state_engine,
+        order_factory=None,
     ):
 
         self.bus = bus
@@ -62,6 +63,7 @@ class Runtime:
             state_engine
         )
 
+        self.order_factory = order_factory
 
         #
         # Assigned after construction
@@ -334,42 +336,146 @@ class Runtime:
             )
         return
 
+    def submit_template(
+        self,
+        template_name: str,
+    ):
+
+        if self.order_factory is None:
+
+            raise RuntimeError(
+                "OrderFactory not attached."
+            )
+
+        request = self.order_factory.build(
+            template_name
+        )
+
+        self.submit_order(request)
+
+    def old_submit_template(
+        self,
+        template_name: str,
+        symbol: str | None = None,
+    ) -> bool:
+        """
+        Submit an order using a named trading template.
+
+        This method is intended for hotkeys and future automation.
+        It delegates construction of the OrderRequest to the
+        OrderFactory.
+
+        Parameters
+        ----------
+        template_name
+            Name of the template in trading.yaml.
+
+        symbol
+            Optional symbol override.  If omitted, the currently
+            selected GUI symbol is used.
+
+        Returns
+        -------
+        bool
+            True if the order was accepted for asynchronous
+            processing.
+        """
+
+        if not self.running:
+            return False
+
+        #
+        # Determine the active symbol.
+        #
+        if symbol is None:
+
+            #
+            # TODO:
+            # Replace with the application's authoritative
+            # source for the currently selected symbol.
+            #
+            symbol = self.gui.get_selected_symbol()
+
+        #
+        # Obtain the latest QuoteState.
+        #
+        quote = self.state_engine.get_quote(symbol)
+
+        if quote is None:
+
+            print(f"No QuoteState available for {symbol}")
+
+            return False
+
+        #
+        # Build an OrderRequest from the template.
+        #
+        from trading_app.services.order_factory import OrderFactory
+
+        request = OrderFactory.build_from_template(
+            trading_config=self.gui.trading_config,
+            template_name=template_name,
+            symbol=symbol,
+            quote=quote,
+        )
+
+        if request is None:
+
+            return False
+
+        #
+        # Submit through the normal command path.
+        #
+        return self.submit_order(request)
 
     # ==========================================================
     # GUI -> Async command path
     # ==========================================================
 
     def submit_order(
-        self,
-        request,
-    ):
-
+    self,
+    request,
+) -> bool:
         """
-        Called by OrderPanel.
+        Submit an OrderRequest into the backend.
 
-        Converts GUI request into
-        CommandEvent.
+        This is the single entry point used by every
+        frontend component, including:
+
+            • OrderPanel
+            • Hotkeys
+            • Automation
+            • Future strategy engines
+
+        Parameters
+        ----------
+        request
+            Fully-populated OrderRequest.
+
+        Returns
+        -------
+        bool
+            True if the request was accepted for
+            asynchronous processing.
         """
 
-        if not self.loop:
+        if not self.running:
+            return False
 
-            return
-
-
-        from trading_app.bus import CommandType
-
+        if self.loop is None:
+            return False
 
         event = CommandEvent(
             command=request.command_side,
             payload=request,
-            )
+        )
 
         asyncio.run_coroutine_threadsafe(
-            self.bus.publish_command(
-                event
-            ),
+            self.bus.publish_command(event),
             self.loop,
         )
+
+        return True
 
 
 

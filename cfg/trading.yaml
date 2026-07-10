@@ -24,6 +24,8 @@
 
 defaults:
 
+  side: BUY
+
   account: default
 
   quantity:
