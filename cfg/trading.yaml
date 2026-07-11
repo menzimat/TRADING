@@ -93,6 +93,10 @@ templates:
 
   buy_limit:
 
+    template_name: "buy_limit"
+
+    template_display_name: "Buy Limit"
+
     side: BUY
 
     order_type: LIMIT
@@ -111,6 +115,9 @@ templates:
 
 
   sell_limit:
+    template_name: "sell_limit"
+
+    template_display_name: "Sell Limit"
 
     side: SELL
 
@@ -130,6 +137,9 @@ templates:
 
 
   buy_market:
+    template_name: "buy_market"
+
+    template_display_name: "Buy Market"
 
     side: BUY
 
@@ -147,6 +157,9 @@ templates:
 
 
   sell_market:
+    template_name: "sell_market"
+
+    template_display_name: "Sell Market"
 
     side: SELL
 

@@ -28,14 +28,13 @@ from trading_app.gui.table_renderer import (
     QuoteTable,
 )
 
-from trading_app.gui.order_panel import (
-    OrderPanel,
-)
-
 from trading_app.gui.status_bar import (
     StatusBar,
 )
 
+from trading_app.gui.trade_instruction_panel import (
+    TradeInstructionPanel,
+)
 
 class TradingApplication:
     """
@@ -56,21 +55,23 @@ class TradingApplication:
     def __init__(
         self,
         *,
+        trading_config=None,
+        trade_instruction_factory=None,
+        get_quote=None,
         on_order=None,
+        on_instruction_submit=None,
         on_connect=None,
         on_disconnect=None,
     ):
-
         self.on_order = on_order
-
-        self.on_connect = (
-            on_connect
+        self.trading_config = trading_config
+        self.trade_instruction_factory = (
+            trade_instruction_factory
         )
-
-        self.on_disconnect = (
-            on_disconnect
-        )
-
+        self.get_quote = get_quote
+        self.on_instruction_submit = (on_instruction_submit)
+        self.on_connect = (on_connect)
+        self.on_disconnect = (on_disconnect)
 
         self.root = tk.Tk()
 
@@ -154,17 +155,26 @@ class TradingApplication:
         # Order panel
         #
 
-        self.order_panel = OrderPanel(
+        self.trade_instruction_panel = TradeInstructionPanel(
             main,
-            on_order=self._order_request,
+            on_submit=
+                self._trade_instruction_submit,
+
+            trading_config=
+                self.trading_config,
+
+            trade_instruction_factory=
+                self.trade_instruction_factory,
         )
 
-        self.order_panel.widget().grid(
+        self.trade_instruction_panel.widget().grid(
             row=0,
             column=1,
             sticky="nsew",
             padx=5,
         )
+
+        self.trade_instruction_panel.load_templates()
 
 
         #
@@ -205,19 +215,89 @@ class TradingApplication:
     # GUI callbacks
     # -------------------------------------------------------------
 
+    def set_accounts(
+        self,
+        accounts,
+    ):
+        print("APPLICATION set_accounts", accounts)
+        self.trade_instruction_panel.set_accounts(
+            accounts
+        )
+
     def _symbol_selected(
         self,
         symbol,
     ):
 
-        self.order_panel.set_symbol(
+        print(
+            "APPLICATION: selected symbol",
+            symbol,
+        )
+
+        #
+        # Change panel context first
+        #
+
+        self.trade_instruction_panel.set_symbol(
             symbol
         )
 
 
-    def get_selected_symbol(self):
-        return self.order_panel.get_symbol()
+        #
+        # Load most recent cached quote
+        #
 
+        if self.get_quote:
+
+            quote = self.get_quote(
+                symbol
+            )
+            print(
+                "APPLICATION cached quote:",
+                quote,
+                type(quote),
+            )
+
+            if quote is not None:
+
+                self.trade_instruction_panel.set_quote(
+                    quote
+                )
+
+            else:
+
+                #
+                # No cached quote exists.
+                # Clear stale values from previous symbol.
+                #
+
+                self.trade_instruction_panel.clear_quote()
+                
+    def get_selected_symbol(self):
+        return (
+            self.trade_instruction_panel
+            .get_symbol()
+        )
+
+    def _trade_instruction_submit(
+        self,
+        instruction,
+    ):
+        """
+        Receive TradeInstruction from GUI.
+
+        The GUI does not know about:
+            - Runtime
+            - Broker
+            - OrderRequest
+        """
+
+        if self.on_instruction_submit:
+
+            self.on_instruction_submit(
+                instruction
+            )
+    
     def _order_request(
         self,
         request,
@@ -266,7 +346,17 @@ class TradingApplication:
             symbol,
             quote,
         )
-
+        #
+        # Only update trade panel
+        # if it is watching this symbol.
+        #
+        if (
+            self.trade_instruction_panel.selected_symbol
+            == symbol
+        ):
+            self.trade_instruction_panel.set_quote(
+                quote
+            )
 
     def set_connection_status(
         self,

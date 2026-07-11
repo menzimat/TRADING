@@ -19,12 +19,10 @@ Does NOT:
 
 from __future__ import annotations
 
-
 import asyncio
 import logging
 from pathlib import Path
-
-
+from trading_app.models.broker_account import BrokerAccount
 from schwab.streaming import StreamClient
 
 
@@ -173,7 +171,21 @@ class SchwabStreamer:
                 "No Schwab accounts returned"
             )
 
+        broker_accounts = []
 
+        for acct in accounts.json():
+
+            number = acct["accountNumber"]
+
+            broker_accounts.append(
+                BrokerAccount(
+                    display_name=f"Acct {number[-4:]}",
+                    account_number=number,
+                    account_hash=acct["hashValue"],
+                )
+            )
+        
+        
         account_hash = (
             account_data[0]["hashValue"]
         )
@@ -182,6 +194,7 @@ class SchwabStreamer:
         logger.info(
             f"Using account hash {account_hash}"
         )
+        print(f"ACCOUNT DATA:", account_data)
 
 
         self.stream_client = StreamClient(
@@ -217,6 +230,17 @@ class SchwabStreamer:
                 "Subscribed: %s",
                 self.symbols
             )
+        try:
+            print("Publishing accounts:", broker_accounts)
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="ACCOUNTS_LOADED",
+                    payload=broker_accounts,
+                )
+            )
+            print("Accounts event published")
+        except Exception:
+            logger.exception("Failed publishing ACCOUNTS_LOADED")
 
 
         await self.bus.publish_system(
@@ -224,7 +248,6 @@ class SchwabStreamer:
                 name="CONNECTED"
             )
         )
-
 
 
     # ======================================================

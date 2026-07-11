@@ -50,6 +50,9 @@ from trading_app.gui.application import (
 from trading_app.config import AppConfig
 from trading_app.trading_config import TradingConfig
 from trading_app.services.order_factory import OrderFactory
+from trading_app.services.trade_instruction_factory import (
+    TradeInstructionFactory,
+)
 
 class Engine:
     """
@@ -109,6 +112,20 @@ class Engine:
             )
         )
 
+        self.trade_instruction_factory = (
+            TradeInstructionFactory(
+                config=self.trading_cfg,
+            )
+        )
+
+
+        
+        #
+        # OrderFactory is a service that builds OrderRequest objects from GUI input.
+        #
+
+        self.order_factory = OrderFactory()
+
 
         #
         # -------------------------------------------------
@@ -119,11 +136,9 @@ class Engine:
         self.runtime = Runtime(
             bus=self.bus,
             streamer=self.streamer,
-            command_processor=
-                self.command_processor,
-            state_engine=
-                self.state_engine,
-            order_factory=None,
+            command_processor=self.command_processor,
+            state_engine=self.state_engine,
+            order_factory=self.order_factory,
         )
 
         #
@@ -133,8 +148,18 @@ class Engine:
         #
 
         self.gui = TradingApplication(
+
+            trading_config=
+                self.trading_cfg,
+
+            trade_instruction_factory=
+                self.trade_instruction_factory,
+            get_quote=self.state_engine.get_quote,
             on_order=
                 self.runtime.submit_order,
+
+            on_instruction_submit=
+                self.runtime.submit_instruction,
 
             on_connect=
                 self.start_backend,
@@ -145,18 +170,15 @@ class Engine:
 
         self.runtime.attach_gui(self.gui)
 
-
+        
         #
-        # OrderFactory is a service that builds OrderRequest objects from GUI input.
-        #
+# Runtime receives final order factory
+#
 
-        self.order_factory = OrderFactory(
-            config=self.trading_cfg,
-            state_engine=self.state_engine,
-            symbol_provider=self.gui,
+        self.runtime.order_factory = (
+            self.order_factory
         )
-        self.runtime.order_factory = self.order_factory
-
+        
     # =====================================================
     # Lifecycle
     # =====================================================

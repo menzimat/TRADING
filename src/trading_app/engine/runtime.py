@@ -20,7 +20,6 @@ Does NOT:
 
 from __future__ import annotations
 
-
 import asyncio
 import threading
 import queue
@@ -31,8 +30,6 @@ from trading_app.bus import (
     CommandEvent,
     SystemEvent,
 )
-
-
 
 class Runtime:
     """
@@ -49,6 +46,7 @@ class Runtime:
         command_processor,
         state_engine,
         order_factory=None,
+        trade_instruction_factory=None,
     ):
 
         self.bus = bus
@@ -64,6 +62,7 @@ class Runtime:
         )
 
         self.order_factory = order_factory
+        self.trade_instruction_factory = trade_instruction_factory
 
         #
         # Assigned after construction
@@ -192,6 +191,31 @@ class Runtime:
     # EventBus Consumers
     # ==========================================================
 
+    def submit_instruction(
+        self,
+        instruction,
+    ):
+        """
+        Convert a TradeInstruction into an
+        OrderRequest and submit it.
+        """
+
+        if self.order_factory is None:
+
+            raise RuntimeError(
+                "OrderFactory not attached."
+            )
+
+
+        request = self.order_factory.create(
+            instruction
+        )
+
+
+        return self.submit_order(
+            request
+        )
+
     async def market_listener(
         self,
     ):
@@ -222,21 +246,16 @@ class Runtime:
 
     async def system_listener(self):
 
-        async for event in (
-            self.bus.subscribe_system()
-        ):
+        async for event in self.bus.subscribe_system():
 
-            if event.name == "PRICE_UPDATED":
+            try:
+                self.gui_queue.put_nowait(event)
 
-                self.gui_queue.put(event)
-
-            elif event.name in (
-                "CONNECTED",
-                "DISCONNECTED",
-                "STREAM_ERROR",
-            ):
-
-                self.gui_queue.put(event)
+            except queue.Full:
+                print(
+                    "GUI queue full, dropping system event:",
+                    event.name,
+                )
 
 
     # ==========================================================
@@ -282,43 +301,30 @@ class Runtime:
         #
         print("_handle_gui_event:", type(event), event)
         if isinstance(event, SystemEvent):
-
-            if event.name == "PRICE_UPDATED":
-
+            if event.name == "ACCOUNTS_LOADED":
+                self.gui.set_accounts(event.payload)
+                return
+            elif event.name == "PRICE_UPDATED":
                 payload = event.payload
-
                 self.gui.update_quote(
                     payload["symbol"],
                     payload,
                 )
-
                 return
-
-
             elif event.name == "CONNECTED":
-
                 self.gui.set_connection_status(
                     "Connected"
                 )
-
                 return
-
-
             elif event.name == "DISCONNECTED":
-
                 self.gui.set_connection_status(
                     "Disconnected"
                 )
-
                 return
-
-
             elif event.name == "STREAM_ERROR":
-
                 self.gui.set_connection_status(
                     "Stream Error"
                 )
-
                 return
 
 

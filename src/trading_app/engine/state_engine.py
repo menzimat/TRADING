@@ -335,7 +335,7 @@ class StateEngine:
     def get_quote(
         self,
         symbol: str,
-    ) -> Optional[dict]:
+    ) -> Optional[QuoteState]:
 
         return self.state.quotes.get(
             symbol.upper()

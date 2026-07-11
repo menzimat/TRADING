@@ -315,9 +315,27 @@ class EventBus:
         for queue in list(
             self.system_subscribers
         ):
-
+            print(
+                "Publishing system event:",
+                event.name,
+                "queue size:",
+                queue.qsize(),
+                "max:",
+                queue.maxsize,
+            )
             if not queue.full():
+                print(
+                "Publishing system event:NOT FULL")
+            print(
+                "SYSTEM SUBSCRIBERS:",
+                len(self.system_subscribers)
+            )
 
-                await queue.put(
-                    event
+            for q in self.system_subscribers:
+                print(
+                    "QUEUE:",
+                    q.qsize(),
+                    "/",
+                    q.maxsize
                 )
+            await queue.put(event)

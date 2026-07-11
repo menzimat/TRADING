@@ -206,8 +206,6 @@ class CommandProcessor:
     async def submit_order(
         self,
         request,
-        side: str,
-        order_type: str,
     ):
 
         #
@@ -247,7 +245,7 @@ class CommandProcessor:
         order_payload = ( request.to_broker_dict())
 
         if (
-            order_type == "LIMIT"
+            request.order_type == "LIMIT"
             and request.price
         ):
 
