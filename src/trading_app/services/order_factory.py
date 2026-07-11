@@ -1,245 +1,110 @@
 """
 services/order_factory.py
 
-Build OrderRequest objects from trading.yaml templates.
+Convert TradeInstruction objects into OrderRequest objects.
 
-The OrderFactory centralizes all order construction for:
+Responsibilities:
 
-    GUI
-    Hotkeys
-    Future automation
+    - Translate GUI/strategy instruction into
+      internal broker-neutral order model.
+
+Non-responsibilities:
+
+    - Reading trading.yaml
+    - Looking up quotes
+    - Calculating prices
+    - Resolving quantities
+    - GUI interaction
 """
 
 from __future__ import annotations
 
+
 from trading_app.models.order import (
     OrderRequest,
-    Side,
-    OrderType,
-    TimeInForce,
 )
 
-from trading_app.engine.state_engine import (
-    QuoteState,
-)
-
-from trading_app.trading_config import (
-    QuantityDefinition,
-    PriceDefinition,
-    PriceBasis,
-    QuantityType,
-    OffsetUnits,
+from trading_app.models.trade_instruction import (
+    TradeInstruction,
 )
 
 
 class OrderFactory:
+    """
+    Build OrderRequest objects from TradeInstruction.
 
-    def __init__(
-        self,
-        *,
-        config,
-        state_engine,
-        symbol_provider,
-    ):
-
-        self.config = config
-        self.state_engine = state_engine
-        self.symbol_provider = symbol_provider
+    This is the final application-layer translation
+    before Runtime submits the order.
+    """
 
     # ---------------------------------------------------------
     # Public API
     # ---------------------------------------------------------
 
-    def create_from_template(
+    def create(
         self,
-        template_name: str,
+        instruction: TradeInstruction,
     ) -> OrderRequest:
+        """
+        Convert a TradeInstruction into an OrderRequest.
+        """
 
-        symbol = self.symbol_provider.get_selected_symbol()
+        if not instruction.symbol:
 
-        if not symbol:
-            raise RuntimeError(
-                "No symbol selected."
+            raise ValueError(
+                "Trade instruction has no symbol."
             )
 
-        quote = self.state_engine.get_quote(symbol)
 
-        if quote is None:
-            raise RuntimeError(
-                f"No quote available for {symbol}"
-            )
+        request = OrderRequest(
 
-        template = self.config.templates[template_name]
+            #
+            # Instrument
+            #
 
-        qty = self._resolve_quantity(
-            template.quantity
-        )
+            symbol=instruction.symbol,
 
-        price = self._compute_price(
-            quote,
-            template.price,
-        )
+            quantity=instruction.quantity,
 
-        return OrderRequest(
 
-            symbol=symbol,
+            #
+            # Order fields
+            #
 
-            quantity=qty,
+            side=instruction.side,
 
-            side=self._side(
-                template.side
+            order_type=instruction.order_type,
+
+            tif=instruction.tif,
+
+
+            #
+            # Price fields
+            #
+
+            limit_price=(
+                instruction.order_price
+                if instruction.is_limit
+                else None
             ),
 
-            order_type=self._order_type(
-                template.order_type
-            ),
 
-            tif=self._tif(
-                template.tif
-            ),
-
-            limit_price=price,
+            #
+            # Runtime options
+            #
 
             review_before_send=(
-                self.config.defaults.review_orders
+                instruction.review_before_send
             ),
 
             extended_hours=(
-                self.config.defaults.extended_hours
+                instruction.extended_hours
+            ),
+
+            allow_partial_fill=(
+                instruction.allow_partial_fill
             ),
         )
 
-    # ---------------------------------------------------------
-    # Quantity
-    # ---------------------------------------------------------
 
-    def _resolve_quantity(
-        self,
-        quantity: QuantityDefinition,
-    ) -> int:
-        """
-        Resolve a quantity definition into a share count.
-
-        Supported types:
-
-            fixed
-            risk      (future)
-            dollars   (future)
-            percent   (future)
-        """
-
-        match quantity.type.lower():
-
-            case "fixed":
-                return int(quantity.value)
-
-            case "risk":
-                raise NotImplementedError(
-                    "Risk-based sizing not implemented."
-                )
-
-            case "dollars":
-                raise NotImplementedError(
-                    "Dollar sizing not implemented."
-                )
-
-            case "percent":
-                raise NotImplementedError(
-                    "Percent sizing not implemented."
-                )
-
-            case _:
-                raise ValueError(
-                    f"Unknown quantity type: "
-                    f"{quantity.type}"
-                )
-
-     # ---------------------------------------------------------
-    # Price
-    # ---------------------------------------------------------
-
-    def _compute_price(
-        self,
-        quote: QuoteState,
-        price: PriceDefinition,
-    ) -> float | None:
-        """
-        Compute the order price from the current quote
-        and the template's pricing definition.
-        """
-
-        #
-        # Resolve named offset.
-        #
-
-        offset = self.config.price_offsets[price.offset]
-
-        #
-        # Choose base price.
-        #
-
-        match price.basis:
-
-            case PriceBasis.ASK:
-                base = quote.ask
-
-            case PriceBasis.BID:
-                base = quote.bid
-
-            case PriceBasis.LAST:
-                base = quote.last
-
-            case PriceBasis.MARKET:
-                return None
-
-            #
-            # Market orders do not require a limit.
-            #
-
-        if base is None:
-            return None
-
-        #
-        # Dollar offsets
-        #
-
-        if offset.units == "dollars":
-
-            return round(
-                base + offset.value,
-                2,
-            )
-
-        #
-        # Percent offsets
-        #
-
-        if offset.units == "percent":
-
-            return round(
-                base * (
-                    1.0 + offset.value / 100.0
-                ),
-                2,
-            )
-
-        #
-        # Tick offsets
-        #
-
-        if offset.units == "ticks":
-
-            #
-            # Replace 0.01 later with
-            # instrument tick size.
-            #
-
-            return round(
-                base + offset.value * 0.01,
-                2,
-            )
-
-        raise ValueError(
-            f"Unknown offset units: "
-            f"{offset.units}"
-        )
+        return request
