@@ -102,6 +102,7 @@ class Engine:
         self.streamer = SchwabStreamer(
             self.client,
             self.bus,
+            state_engine=self.state_engine,
         )
 
 

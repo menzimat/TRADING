@@ -227,6 +227,23 @@ class CommandProcessor:
 
 
 
+        try:
+            if request.side.name == "SELL":
+                await self._enforce_sell_position_limit(request)
+        except Exception as exc:
+            logger.exception("Sell validation failed for %s", request.symbol)
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="ORDER_REJECTED",
+                    payload={
+                        "command": request.command_side,
+                        "reason": str(exc),
+                        "payload": request,
+                    },
+                )
+            )
+            return
+
         #
         # Publish submitted event
         #
@@ -303,6 +320,24 @@ class CommandProcessor:
         )
 
 
+
+    async def _enforce_sell_position_limit(self, request):
+        if request.side.name != "SELL":
+            return
+
+        symbol = request.symbol.upper()
+        position = self.state_engine.get_position(symbol)
+
+        if position is None or position.quantity <= 0:
+            raise ValueError(f"No long position available for {symbol}")
+
+        requested_qty = int(request.quantity)
+        available_qty = int(getattr(position, "quantity", 0))
+        capped_qty = min(requested_qty, available_qty)
+        if capped_qty <= 0:
+            raise ValueError(f"No long position available for {symbol}")
+
+        request.quantity = capped_qty
 
     async def place_order(
         self,

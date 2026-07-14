@@ -421,21 +421,22 @@ class OrderRequest:
 
         builder.set_quantity(self.quantity)
 
-        builder.set_price(self.limit_price)
-
         builder.set_order_strategy_type(
             getattr(common.OrderStrategyType, "SINGLE")
         )
 
         builder.set_session(common.Session.NORMAL)
 
-        if self.order_type.name in {"LIMIT", "STOP_LIMIT"}:
-            if self.limit_price is not None:
-                builder.set_price(self.limit_price)
+        if self.order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT):
+            builder.set_price(str(self.limit_price))
 
-        if self.order_type.name in {"STOP", "STOP_LIMIT"}:
-            if self.stop_price is not None:
-                builder.set_stop_price(self.stop_price)
+
+        if self.order_type in (OrderType.STOP, OrderType.STOP_LIMIT):
+            builder.set_stop_price(str(self.stop_price))
+
+ #       if self.order_type.name in {"STOP", "STOP_LIMIT"}:
+ #           if self.stop_price is not None:
+ #               builder.set_stop_price(self.stop_price)
 
         instruction = getattr(
             common.EquityInstruction,
