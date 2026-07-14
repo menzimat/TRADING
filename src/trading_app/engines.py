@@ -53,6 +53,7 @@ from trading_app.services.order_factory import OrderFactory
 from trading_app.services.trade_instruction_factory import (
     TradeInstructionFactory,
 )
+from trading_app.services.hotkeys import HotkeyManager
 
 class Engine:
     """
@@ -142,6 +143,12 @@ class Engine:
             order_factory=self.order_factory,
         )
 
+        self.hotkey_manager = HotkeyManager(
+            trading_config=self.trading_cfg,
+            runtime=self.runtime,
+            trade_instruction_factory=self.trade_instruction_factory,
+        )
+
         #
         # -------------------------------------------------
         # GUI
@@ -205,6 +212,7 @@ class Engine:
     def start_backend(self):
         print("ENGINE: starting backend")
         self.runtime.start()
+        self.hotkey_manager.start()
 
     def stop_backend(self):
 

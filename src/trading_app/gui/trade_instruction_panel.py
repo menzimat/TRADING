@@ -1029,6 +1029,52 @@ class TradeInstructionPanel:
             "schwab_payload": payload,
         }
 
+    def apply_template_to_panel(
+        self,
+        template_name: str,
+        *,
+        quote=None,
+        side=None,
+        quantity=None,
+        review_before_send=None,
+    ) -> TradeInstruction:
+        if not self.trade_instruction_factory:
+            raise RuntimeError("TradeInstructionFactory missing.")
+
+        if not self.selected_symbol:
+            raise ValueError("No symbol selected.")
+
+        instruction = self.trade_instruction_factory.create(
+            template_name=template_name,
+            symbol=self.selected_symbol,
+            quote=quote,
+        )
+
+        if side is not None:
+            instruction.side = side
+
+        if quantity is not None:
+            instruction.quantity_value = int(quantity)
+
+        if review_before_send is not None:
+            instruction.review_before_send = review_before_send
+
+        if self.accounts:
+            current_account = self.account_var.get()
+            if current_account:
+                instruction.account = current_account
+                for account in self.accounts:
+                    if account.display_name == current_account:
+                        instruction.account_hash = account.account_hash
+                        break
+                else:
+                    instruction.account_hash = None
+
+        self.instruction = instruction
+        self._display_instruction()
+        self._recalculate()
+        return instruction
+
     def _display_instruction(self):
 
         i = self.instruction
