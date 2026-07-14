@@ -88,6 +88,9 @@ class Runtime:
 
         self.gui_queue = queue.Queue(maxsize=5000)
 
+        self.accounts = []
+        self.selected_account_hash = None
+
 
     # ==========================================================
     # GUI Attachment
@@ -302,7 +305,10 @@ class Runtime:
         print("_handle_gui_event:", type(event), event)
         if isinstance(event, SystemEvent):
             if event.name == "ACCOUNTS_LOADED":
-                self.gui.set_accounts(event.payload)
+                self.accounts = list(event.payload or [])
+                if self.accounts:
+                    self.selected_account_hash = self.accounts[0].account_hash
+                self.gui.set_accounts(self.accounts)
                 return
             elif event.name == "PRICE_UPDATED":
                 payload = event.payload
@@ -334,7 +340,13 @@ class Runtime:
 
         payload = getattr(event, "payload", None)
 
-        if hasattr(payload, "symbol"):
+        if (
+            payload is not None
+            and hasattr(payload, "symbol")
+            and hasattr(payload, "bid")
+            and hasattr(payload, "ask")
+            and hasattr(payload, "last")
+        ):
 
             self.gui.update_quote(
                 payload.symbol,

@@ -22,6 +22,7 @@ Non-responsibilities:
 from __future__ import annotations
 
 
+import pprint
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Callable, Optional
@@ -137,10 +138,22 @@ class TradeInstructionPanel:
                 )
             )
 
-
             self.offset_units_var.set(
                 instruction.offset_units.name
             )
+
+            self.review_var.set(
+                instruction.review_before_send
+            )
+
+            if instruction.manual_order_price is None:
+                self.manual_price_var.set("")
+            else:
+                self.manual_price_var.set(
+                    str(
+                        instruction.manual_order_price
+                    )
+                )
 
             self._display_instruction()
             
@@ -170,6 +183,27 @@ class TradeInstructionPanel:
                 self.instruction.order_price
             )
         )
+
+    def _manual_price_changed(
+        self,
+        *_
+    ):
+        if not self.instruction:
+            return
+
+        value = self.manual_price_var.get().strip()
+
+        if not value:
+            self.instruction.manual_order_price = None
+            self._recalculate()
+            return
+
+        try:
+            self.instruction.manual_order_price = float(value)
+        except ValueError:
+            return
+
+        self._recalculate()
 
     def _offset_changed(
         self,
@@ -287,6 +321,19 @@ class TradeInstructionPanel:
             self._offset_units_changed,
         )
 
+        self.manual_price_var = tk.StringVar(
+            value=""
+        )
+
+        self.manual_price_var.trace_add(
+            "write",
+            self._manual_price_changed,
+        )
+
+        self.review_var = tk.BooleanVar(
+            value=True
+        )
+
         self.price_basis_var.trace_add(
             "write",
             self._price_basis_changed,
@@ -357,6 +404,11 @@ class TradeInstructionPanel:
             self.frame,
             textvariable=self.account_var,
             state="readonly",
+        )
+
+        self.account_box.bind(
+            "<<ComboboxSelected>>",
+            self._account_selected,
         )
 
         self.account_box.grid(
@@ -490,6 +542,28 @@ class TradeInstructionPanel:
                 for e in OffsetUnits
             ],
             row,
+        )
+
+        row += 1
+
+        self._label_entry(
+            "Manual Price",
+            self.manual_price_var,
+            row,
+        )
+
+        row += 1
+
+        ttk.Checkbutton(
+            self.frame,
+            text="Review before send",
+            variable=self.review_var,
+        ).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(5, 0),
         )
 
         row += 1
@@ -733,6 +807,15 @@ class TradeInstructionPanel:
         if values:
             self.account_var.set(values[0])
 
+            if self.instruction is not None:
+                self.instruction.account = values[0]
+                for account in accounts:
+                    if account.display_name == values[0]:
+                        self.instruction.account_hash = account.account_hash
+                        break
+                else:
+                    self.instruction.account_hash = None
+
     def set_quote(
         self,
         quote,
@@ -910,6 +993,42 @@ class TradeInstructionPanel:
     # Display
     # =========================================================
 
+    def _account_selected(
+        self,
+        event=None,
+    ):
+        if not self.instruction:
+            return
+
+        selected_name = self.account_var.get()
+
+        if not self.accounts:
+            self.instruction.account_hash = None
+            return
+
+        for account in self.accounts:
+            if account.display_name == selected_name:
+                self.instruction.account = account.display_name
+                self.instruction.account_hash = account.account_hash
+                return
+
+        self.instruction.account_hash = None
+
+    @staticmethod
+    def _build_debug_payload(
+        instruction: TradeInstruction,
+    ):
+        from trading_app.services.order_factory import OrderFactory
+
+        request = OrderFactory().create(instruction)
+        payload = request.to_schwab_order_spec()
+
+        return {
+            "request": request,
+            "account_hash": request.account_hash,
+            "schwab_payload": payload,
+        }
+
     def _display_instruction(self):
 
         i = self.instruction
@@ -954,6 +1073,17 @@ class TradeInstructionPanel:
             str(i.offset_value)
         )
 
+        if i.manual_order_price is None:
+            self.manual_price_var.set("")
+        else:
+            self.manual_price_var.set(
+                str(i.manual_order_price)
+            )
+
+        self.review_var.set(
+            i.review_before_send
+        )
+
         self.base_price_var.set(
             self._fmt(i.base_price)
         )
@@ -985,13 +1115,59 @@ class TradeInstructionPanel:
             self.account_var.get()
         )
 
-        self.instruction.side = side
+        self._account_selected()
 
+        self.instruction.side = side
 
         self.instruction.quantity_value = int(
             self.quantity_var.get()
         )
 
+        self.instruction.review_before_send = bool(
+            self.review_var.get()
+        )
+
+        manual_value = self.manual_price_var.get().strip()
+
+        if manual_value:
+            try:
+                self.instruction.manual_order_price = float(
+                    manual_value
+                )
+            except ValueError:
+                messagebox.showerror(
+                    "Invalid Price",
+                    "Manual price must be numeric.",
+                )
+                return
+        else:
+            self.instruction.manual_order_price = None
+
+        self._recalculate()
+
+        debug_payload = self._build_debug_payload(self.instruction)
+        print(
+            "SCHWAB ORDER DEBUG",
+            pprint.pformat(debug_payload),
+            flush=True,
+        )
+
+        if self.instruction.review_before_send:
+            review_text = (
+                f"Symbol: {self.instruction.symbol}\n"
+                f"Side: {self.instruction.side.name}\n"
+                f"Order Type: {self.instruction.order_type.name}\n"
+                f"Quantity: {self.instruction.quantity}\n"
+                f"Price: {self._fmt(self.instruction.order_price)}\n"
+                f"TIF: {self.instruction.tif.name}"
+            )
+
+            if not messagebox.askyesno(
+                "Review Order",
+                "Send this order?\n\n"
+                + review_text,
+            ):
+                return
 
         if self.on_submit:
 

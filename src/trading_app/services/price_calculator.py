@@ -82,6 +82,19 @@ class PriceCalculator:
 
         base = cls._base_price(instruction)
 
+        if (
+            instruction.is_limit
+            and instruction.manual_order_price is not None
+        ):
+            return PriceCalculation(
+                base_price=base,
+                offset_amount=0.0,
+                order_price=round(
+                    instruction.manual_order_price,
+                    2,
+                ),
+            )
+
         if base is None:
             return PriceCalculation(
                 base_price=None,

@@ -11,3 +11,4 @@ __pycache__/
 tokens/
 .vscode/settings.json
 trading_app.egg-info/
+.venv/

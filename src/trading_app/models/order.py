@@ -121,6 +121,8 @@ class OrderRequest:
 
     quantity: int = 0
 
+    account_hash: Optional[str] = None
+
 
 
     #
@@ -378,32 +380,75 @@ class OrderRequest:
         self.validate()
 
 
-        return {
-
-            "symbol":
-                self.symbol,
-
-            "quantity":
-                self.quantity,
-
-            "side":
-                self.side.name,
-
-            "order_type":
-                self.order_type.name,
-
-            "time_in_force":
-                self.tif.name,
-
-            "limit_price":
-                self.limit_price,
-
-            "stop_price":
-                self.stop_price,
-
-            "extended_hours":
-                self.extended_hours,
+        payload = {
+            "symbol": self.symbol,
+            "quantity": self.quantity,
+            "side": self.side.name,
+            "order_type": self.order_type.name,
+            "time_in_force": self.tif.name,
+            "limit_price": self.limit_price,
+            "stop_price": self.stop_price,
+            "extended_hours": self.extended_hours,
         }
+
+        if self.order_type.name == "LIMIT":
+            payload["price"] = self.limit_price
+            payload["limitPrice"] = self.limit_price
+
+        if self.order_type.name == "STOP_LIMIT":
+            payload["stopPrice"] = self.stop_price
+            payload["limitPrice"] = self.limit_price
+
+        return payload
+
+    def to_schwab_order_spec(self):
+        """
+        Convert the internal order request into the schema expected by
+        schwab-py 1.5.1.
+        """
+        from schwab.client.base import OrderBuilder
+        from schwab.orders import common
+
+        builder = OrderBuilder()
+
+        builder.set_duration(
+            getattr(common.Duration, self.tif.name)
+        )
+
+        builder.set_order_type(
+            getattr(common.OrderType, self.order_type.name)
+        )
+
+        builder.set_quantity(self.quantity)
+
+        builder.set_price(self.limit_price)
+
+        builder.set_order_strategy_type(
+            getattr(common.OrderStrategyType, "SINGLE")
+        )
+
+        builder.set_session(common.Session.NORMAL)
+
+        if self.order_type.name in {"LIMIT", "STOP_LIMIT"}:
+            if self.limit_price is not None:
+                builder.set_price(self.limit_price)
+
+        if self.order_type.name in {"STOP", "STOP_LIMIT"}:
+            if self.stop_price is not None:
+                builder.set_stop_price(self.stop_price)
+
+        instruction = getattr(
+            common.EquityInstruction,
+            self.side.name,
+        )
+
+        builder.add_equity_leg(
+            instruction,
+            self.symbol,
+            self.quantity,
+        )
+
+        return builder.build()
 
 
 

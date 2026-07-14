@@ -109,6 +109,7 @@ class Engine:
                 client=self.client,
                 bus=self.bus,
                 state_engine=self.state_engine,
+                account_provider=self._get_selected_account_hash,
             )
         )
 
@@ -178,6 +179,18 @@ class Engine:
         self.runtime.order_factory = (
             self.order_factory
         )
+
+    def _get_selected_account_hash(self):
+        if self.runtime is None:
+            return None
+
+        if self.runtime.selected_account_hash:
+            return self.runtime.selected_account_hash
+
+        if self.runtime.accounts:
+            return self.runtime.accounts[0].account_hash
+
+        return None
         
     # =====================================================
     # Lifecycle

@@ -71,6 +71,8 @@ class TradeInstruction:
 
     account: str = ""
 
+    account_hash: Optional[str] = None
+
     #
     # Order
     #
@@ -118,6 +120,8 @@ class TradeInstruction:
     base_price: Optional[float] = None
 
     order_price: Optional[float] = None
+
+    manual_order_price: Optional[float] = None
 
     #
     # Convenience

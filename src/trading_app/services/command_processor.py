@@ -19,8 +19,11 @@ Non-responsibilities:
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any
+
+import pprint
 
 
 from trading_app.bus import (
@@ -46,6 +49,7 @@ class CommandProcessor:
         client,
         bus: EventBus,
         state_engine,
+        account_provider=None,
     ):
 
         self.client = client
@@ -55,6 +59,8 @@ class CommandProcessor:
         self.state_engine = (
             state_engine
         )
+
+        self.account_provider = account_provider
 
         self.running = True
 
@@ -183,8 +189,6 @@ class CommandProcessor:
 
         await self.submit_order(
             request,
-            side,
-            order_type="MARKET",
         )
 
 
@@ -197,8 +201,6 @@ class CommandProcessor:
 
         await self.submit_order(
             request,
-            side,
-            order_type="LIMIT",
         )
 
 
@@ -242,16 +244,12 @@ class CommandProcessor:
         # Broker order payload
         #
 
-        order_payload = ( request.to_broker_dict())
+        order_payload = request.to_schwab_order_spec()
 
-        if (
-            request.order_type == "LIMIT"
-            and request.price
-        ):
-
-            order_payload[
-                "price"
-            ] = request.price
+        logger.info(
+            "Submitting order payload: %s",
+            order_payload,
+        )
 
 
 
@@ -259,18 +257,48 @@ class CommandProcessor:
         # Schwab API boundary
         #
 
-        response = await (
-            self.place_order(
-                order_payload
+        try:
+            response = await (
+                self.place_order(
+                    order_payload,
+                    request=request,
+                )
             )
+        except Exception as exc:
+            logger.exception(
+                "Broker order submission failed for %s",
+                request.symbol,
+            )
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="ORDER_REJECTED",
+                    payload={
+                        "command": CommandEvent(
+                            command=request.command_side,
+                            payload=request,
+                        ),
+                        "reason": str(exc),
+                        "payload": order_payload,
+                    },
+                )
+            )
+            return
+
+        logger.info(
+            "Broker order response: %s",
+            response,
         )
 
-
+        payload = {
+            "request": request,
+            "response": response,
+            "payload": order_payload,
+        }
 
         await self.bus.publish_system(
             SystemEvent(
                 name="ORDER_ACCEPTED",
-                payload=response,
+                payload=payload,
             )
         )
 
@@ -279,29 +307,106 @@ class CommandProcessor:
     async def place_order(
         self,
         payload: dict,
+        request=None,
     ):
 
         """
         Schwab API boundary.
 
-        Adjust here to match
-        schwab-py client version.
+        The schwab-py client API varies by version. This adapter
+        tries the common signatures in order and raises a clear
+        error if the installed client does not support order entry.
         """
 
-        #
-        # Typical schwab-py:
-        #
-        # response = await client.place_order(...)
-        #
+        if not self.client:
+            raise RuntimeError("Schwab client is not configured.")
 
-        response = (
-            self.client.place_order(
-                payload
-            )
+        place_order = getattr(
+            self.client,
+            "place_order",
+            None,
         )
 
+        if place_order is None:
+            raise RuntimeError(
+                "Installed schwab client does not expose place_order()."
+            )
 
-        return response
+        account_hash = None
+
+        if request is not None:
+            account_hash = getattr(request, "account_hash", None)
+
+        if account_hash is None and self.account_provider is not None:
+            account_hash = self.account_provider()
+
+        if account_hash is None and hasattr(self.client, "account_hash"):
+            account_hash = self.client.account_hash
+
+        if account_hash is None:
+            account_hash = getattr(self.client, "accounts", None)
+            if account_hash:
+                try:
+                    account_hash = account_hash[0].account_hash
+                except Exception:
+                    account_hash = None
+
+        if account_hash is None:
+            raise RuntimeError(
+                "Schwab client does not expose an account_hash for order placement."
+            )
+
+        try:
+            response = place_order(account_hash, payload)
+            if inspect.isawaitable(response):
+                response = await response
+
+            diagnostics = self._extract_response_diagnostics(response)
+            logger.error(
+                "Schwab order response diagnostics: %s",
+                pprint.pformat(diagnostics),
+            )
+            print(
+                "SCHWAB ORDER RESPONSE DIAGNOSTICS",
+                pprint.pformat(diagnostics),
+                flush=True,
+            )
+            return response
+        except TypeError as exc:
+            raise RuntimeError(
+                "Unable to submit order with installed schwab client: "
+                f"{exc}"
+            ) from exc
+
+    def _extract_response_diagnostics(self, response: Any) -> dict[str, Any]:
+        if response is None:
+            return {
+                "status_code": None,
+                "headers": None,
+                "body": None,
+            }
+
+        status_code = getattr(response, "status_code", None)
+        headers = getattr(response, "headers", None)
+        body = getattr(response, "text", None)
+
+        if body is None:
+            body = getattr(response, "content", None)
+
+        if body is None:
+            body = getattr(response, "body", None)
+
+        if body is None and hasattr(response, "json"):
+            try:
+                body = response.json()
+            except Exception:
+                body = None
+
+        return {
+            "status_code": status_code,
+            "headers": headers,
+            "body": body,
+        }
 
 
 

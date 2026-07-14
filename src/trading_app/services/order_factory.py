@@ -66,6 +66,7 @@ class OrderFactory:
 
             quantity=instruction.quantity,
 
+            account_hash=instruction.account_hash,
 
             #
             # Order fields
@@ -83,9 +84,14 @@ class OrderFactory:
             #
 
             limit_price=(
-                instruction.order_price
+                instruction.manual_order_price
                 if instruction.is_limit
-                else None
+                and instruction.manual_order_price is not None
+                else (
+                    instruction.order_price
+                    if instruction.is_limit
+                    else None
+                )
             ),
 
 
