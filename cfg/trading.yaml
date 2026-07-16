@@ -29,7 +29,7 @@ defaults:
   account: default
 
   quantity:
-    type: fixed          # fixed | risk | percent
+    type: fixed          # fixed | risk | percent (SELL percent uses cached position)
     value: 100
 
   tif: DAY
@@ -48,7 +48,7 @@ defaults:
 price_offsets:
 
   default:
-    value: 0.10
+    value: 0.01
     units: dollars       # dollars | percent | ticks
 
   aggressive:
@@ -75,6 +75,12 @@ hotkeys:
   ctrl+b: buy_limit
 
   ctrl+s: sell_limit
+
+  ctrl+z: flatten
+
+  ctrl+x: sell_limit_half
+
+  ctrl+c: sell_limit_qtr
 
   shift+f: flatten
 
@@ -126,6 +132,48 @@ templates:
     quantity:
       type: fixed
       value: 100
+
+    price:
+
+      basis: bid
+
+      offset: default
+
+    tif: DAY
+
+  sell_limit_half:
+    template_name: "sell_limit_half"
+
+    template_display_name: "Sell Limit Half"
+
+    side: SELL
+
+    order_type: LIMIT
+
+    quantity:
+      type: percent
+      value: 50
+
+    price:
+
+      basis: bid
+
+      offset: default
+
+    tif: DAY
+
+  sell_limit_qtr:
+    template_name: "sell_limit_qtr"
+
+    template_display_name: "Sell Limit Quarter"
+
+    side: SELL
+
+    order_type: LIMIT
+
+    quantity:
+      type: percent
+      value: 25
 
     price:
 

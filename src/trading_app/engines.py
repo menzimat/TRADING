@@ -181,6 +181,9 @@ class Engine:
 
             on_remove_symbol=
                 self.runtime.remove_symbol,
+
+            resolve_instruction=
+                self.runtime.resolve_instruction_quantity,
         )
 
         self.runtime.attach_gui(self.gui)

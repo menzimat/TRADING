@@ -64,6 +64,7 @@ class TradingApplication:
         on_disconnect=None,
         on_add_symbol=None,
         on_remove_symbol=None,
+        resolve_instruction=None,
     ):
         self.on_order = on_order
         self.trading_config = trading_config
@@ -76,6 +77,7 @@ class TradingApplication:
         self.on_disconnect = (on_disconnect)
         self.on_add_symbol = on_add_symbol
         self.on_remove_symbol = on_remove_symbol
+        self.resolve_instruction = resolve_instruction
 
         self.root = tk.Tk()
 
@@ -168,6 +170,9 @@ class TradingApplication:
 
             on_symbol_entered=
                 self._add_symbol,
+
+            resolve_instruction=
+                self.resolve_instruction,
 
             trading_config=
                 self.trading_config,
