@@ -60,11 +60,15 @@ class TradeInstructionPanel:
         on_submit: Optional[
             Callable[[TradeInstruction], None]
         ] = None,
+        on_symbol_entered: Optional[
+            Callable[[str], None]
+        ] = None,
         trading_config=None,
         trade_instruction_factory=None,
     ):
         self._loading_instruction = False
         self.on_submit = on_submit
+        self.on_symbol_entered = on_symbol_entered
 
         self.trading_config = (
             trading_config
@@ -675,14 +679,28 @@ class TradeInstructionPanel:
             sticky="w",
         )
 
-        ttk.Entry(
+        entry = ttk.Entry(
             self.frame,
             textvariable=variable,
-        ).grid(
+        )
+        entry.grid(
             row=row,
             column=1,
             sticky="ew",
         )
+
+        if label == "Symbol":
+            self.symbol_entry = entry
+            entry.bind("<Return>", self._symbol_entered)
+
+
+    def _symbol_entered(self, event=None):
+        """Ask the application to watch the symbol typed into the panel."""
+
+        if self.on_symbol_entered:
+            self.on_symbol_entered(self.symbol_var.get())
+
+        return "break"
 
 
     def _label_display(

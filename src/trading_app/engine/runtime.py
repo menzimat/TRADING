@@ -103,6 +103,45 @@ class Runtime:
 
         self.gui = gui
 
+    def add_symbol(self, symbol: str) -> bool:
+        """Queue a new market-data subscription requested by the Tk GUI."""
+
+        symbol = symbol.strip().upper()
+
+        if (
+            not symbol
+            or symbol == "-"
+            or not self.running
+            or self.loop is None
+            or self.streamer.has_symbol(symbol)
+        ):
+            return False
+
+        asyncio.run_coroutine_threadsafe(
+            self.streamer.add_symbol(symbol),
+            self.loop,
+        )
+        return True
+
+    def remove_symbol(self, symbol: str) -> bool:
+        """Queue removal of a GUI symbol from the market-data watchlist."""
+
+        symbol = symbol.strip().upper()
+
+        if (
+            not symbol
+            or not self.running
+            or self.loop is None
+            or not self.streamer.has_symbol(symbol)
+        ):
+            return False
+
+        asyncio.run_coroutine_threadsafe(
+            self.streamer.remove_symbol(symbol),
+            self.loop,
+        )
+        return True
+
 
 
     # ==========================================================

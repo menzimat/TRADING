@@ -62,6 +62,9 @@ class SchwabStreamer:
         self.account_hash = None
 
         self.symbols = self.load_symbols()
+        self._subscribed_symbols = set()
+        self._subscription_lock = asyncio.Lock()
+        self._subscriptions_ready = False
 
 
 
@@ -94,6 +97,68 @@ class SchwabStreamer:
             if line.strip()
 
         ]
+
+    def has_symbol(self, symbol: str) -> bool:
+        """Return whether a symbol is already on the streamer watchlist."""
+
+        return symbol.strip().upper() in self.symbols
+
+    async def add_symbol(self, symbol: str) -> bool:
+        """Add one symbol to the watchlist and subscribe it when connected."""
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol == "-" or self.has_symbol(symbol):
+            return False
+
+        self.symbols.append(symbol)
+
+        if self._subscriptions_ready:
+            await self._subscribe_symbols([symbol], add=True)
+
+        return True
+
+    async def remove_symbol(self, symbol: str) -> bool:
+        """Remove one symbol from the watchlist and unsubscribe when live."""
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol not in self.symbols:
+            return False
+
+        self.symbols.remove(symbol)
+
+        if self._subscriptions_ready:
+            async with self._subscription_lock:
+                await self.stream_client.level_one_equity_unsubs([symbol])
+                self._subscribed_symbols.discard(symbol)
+                logger.info("Unsubscribed: %s", symbol)
+
+        return True
+
+    async def _subscribe_symbols(self, symbols, *, add=False):
+        """Subscribe only symbols not yet sent on this websocket connection.
+
+        ``SUBS`` establishes the initial subscription set. Subsequent symbols
+        must use Schwab's ``ADD`` command so existing quote subscriptions stay
+        active.
+        """
+
+        async with self._subscription_lock:
+            pending = [
+                symbol for symbol in symbols
+                if symbol not in self._subscribed_symbols
+            ]
+
+            if not pending:
+                return
+
+            if add:
+                await self.stream_client.level_one_equity_add(pending)
+            else:
+                await self.stream_client.level_one_equity_subs(pending)
+            self._subscribed_symbols.update(pending)
+            logger.info("Subscribed: %s", pending)
 
 
 
@@ -222,6 +287,9 @@ class SchwabStreamer:
 
         await self.stream_client.account_activity_sub()
 
+        self._subscribed_symbols.clear()
+        self._subscriptions_ready = False
+
 
         logger.info(
             "Schwab websocket connected"
@@ -231,19 +299,8 @@ class SchwabStreamer:
         await self.refresh_positions(self.account_hash)
 
         if self.symbols:
-
-            await (
-                self.stream_client
-                .level_one_equity_subs(
-                    self.symbols
-                )
-            )
-
-
-            logger.info(
-                "Subscribed: %s",
-                self.symbols
-            )
+            await self._subscribe_symbols(self.symbols)
+        self._subscriptions_ready = True
         try:
             print("Publishing accounts:", broker_accounts)
             await self.bus.publish_system(
@@ -481,6 +538,8 @@ class SchwabStreamer:
 
 
         self.stream_client = None
+        self._subscriptions_ready = False
+        self._subscribed_symbols.clear()
 
 
 

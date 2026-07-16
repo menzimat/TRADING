@@ -175,6 +175,12 @@ class Engine:
 
             on_disconnect=
                 self.stop_backend,
+
+            on_add_symbol=
+                self.runtime.add_symbol,
+
+            on_remove_symbol=
+                self.runtime.remove_symbol,
         )
 
         self.runtime.attach_gui(self.gui)

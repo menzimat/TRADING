@@ -62,6 +62,8 @@ class TradingApplication:
         on_instruction_submit=None,
         on_connect=None,
         on_disconnect=None,
+        on_add_symbol=None,
+        on_remove_symbol=None,
     ):
         self.on_order = on_order
         self.trading_config = trading_config
@@ -72,6 +74,8 @@ class TradingApplication:
         self.on_instruction_submit = (on_instruction_submit)
         self.on_connect = (on_connect)
         self.on_disconnect = (on_disconnect)
+        self.on_add_symbol = on_add_symbol
+        self.on_remove_symbol = on_remove_symbol
 
         self.root = tk.Tk()
 
@@ -142,6 +146,8 @@ class TradingApplication:
             main,
             on_select=
                 self._symbol_selected,
+            on_delete=
+                self._remove_symbol,
         )
 
         self.quote_table.widget().grid(
@@ -159,6 +165,9 @@ class TradingApplication:
             main,
             on_submit=
                 self._trade_instruction_submit,
+
+            on_symbol_entered=
+                self._add_symbol,
 
             trading_config=
                 self.trading_config,
@@ -297,6 +306,35 @@ class TradingApplication:
             self.on_instruction_submit(
                 instruction
             )
+
+    def _add_symbol(self, symbol):
+        """Add a symbol typed in the trade panel to the watchlist and table."""
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol == "-":
+            return
+
+        if self.quote_table.find_symbol(symbol):
+            self.quote_table.select_symbol(symbol)
+            return
+
+        if self.on_add_symbol and not self.on_add_symbol(symbol):
+            return
+
+        if self.quote_table.add_symbol(symbol):
+            self.quote_table.select_symbol(symbol)
+
+    def _remove_symbol(self, symbol):
+        """Remove a table symbol and its market-data subscription."""
+
+        if self.on_remove_symbol and not self.on_remove_symbol(symbol):
+            return
+
+        self.quote_table.remove_symbol(symbol)
+
+        if self.trade_instruction_panel.selected_symbol == symbol.upper():
+            self.trade_instruction_panel.set_symbol(None)
     
     def _order_request(
         self,
