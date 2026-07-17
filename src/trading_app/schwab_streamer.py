@@ -20,6 +20,7 @@ Does NOT:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from pathlib import Path
 from trading_app.models.broker_account import BrokerAccount
@@ -45,17 +46,25 @@ class SchwabStreamer:
         self,
         client,
         bus: EventBus,
+        state_engine=None,
     ):
 
         self.client = client
 
         self.bus = bus
 
+        self.state_engine = state_engine
+
         self.running = False
 
         self.stream_client = None
 
+        self.account_hash = None
+
         self.symbols = self.load_symbols()
+        self._subscribed_symbols = set()
+        self._subscription_lock = asyncio.Lock()
+        self._subscriptions_ready = False
 
 
 
@@ -88,6 +97,68 @@ class SchwabStreamer:
             if line.strip()
 
         ]
+
+    def has_symbol(self, symbol: str) -> bool:
+        """Return whether a symbol is already on the streamer watchlist."""
+
+        return symbol.strip().upper() in self.symbols
+
+    async def add_symbol(self, symbol: str) -> bool:
+        """Add one symbol to the watchlist and subscribe it when connected."""
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol == "-" or self.has_symbol(symbol):
+            return False
+
+        self.symbols.append(symbol)
+
+        if self._subscriptions_ready:
+            await self._subscribe_symbols([symbol], add=True)
+
+        return True
+
+    async def remove_symbol(self, symbol: str) -> bool:
+        """Remove one symbol from the watchlist and unsubscribe when live."""
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol not in self.symbols:
+            return False
+
+        self.symbols.remove(symbol)
+
+        if self._subscriptions_ready:
+            async with self._subscription_lock:
+                await self.stream_client.level_one_equity_unsubs([symbol])
+                self._subscribed_symbols.discard(symbol)
+                logger.info("Unsubscribed: %s", symbol)
+
+        return True
+
+    async def _subscribe_symbols(self, symbols, *, add=False):
+        """Subscribe only symbols not yet sent on this websocket connection.
+
+        ``SUBS`` establishes the initial subscription set. Subsequent symbols
+        must use Schwab's ``ADD`` command so existing quote subscriptions stay
+        active.
+        """
+
+        async with self._subscription_lock:
+            pending = [
+                symbol for symbol in symbols
+                if symbol not in self._subscribed_symbols
+            ]
+
+            if not pending:
+                return
+
+            if add:
+                await self.stream_client.level_one_equity_add(pending)
+            else:
+                await self.stream_client.level_one_equity_subs(pending)
+            self._subscribed_symbols.update(pending)
+            logger.info("Subscribed: %s", pending)
 
 
 
@@ -190,6 +261,8 @@ class SchwabStreamer:
             account_data[0]["hashValue"]
         )
 
+        self.account_hash = account_hash
+
 
         logger.info(
             f"Using account hash {account_hash}"
@@ -206,9 +279,16 @@ class SchwabStreamer:
         self.stream_client.add_level_one_equity_handler(
             self.handle_quote
         )
-
+        self.stream_client.add_account_activity_handler(
+            self.handle_account_activity
+        )
 
         await self.stream_client.login()
+
+        await self.stream_client.account_activity_sub()
+
+        self._subscribed_symbols.clear()
+        self._subscriptions_ready = False
 
 
         logger.info(
@@ -216,20 +296,11 @@ class SchwabStreamer:
         )
 
 
+        await self.refresh_positions(self.account_hash)
+
         if self.symbols:
-
-            await (
-                self.stream_client
-                .level_one_equity_subs(
-                    self.symbols
-                )
-            )
-
-
-            logger.info(
-                "Subscribed: %s",
-                self.symbols
-            )
+            await self._subscribe_symbols(self.symbols)
+        self._subscriptions_ready = True
         try:
             print("Publishing accounts:", broker_accounts)
             await self.bus.publish_system(
@@ -271,6 +342,134 @@ class SchwabStreamer:
                     payload=quote,
                 )
             )
+
+    async def handle_account_activity(self, message):
+        payload = message.get("content") if isinstance(message, dict) else None
+        if not payload:
+            return
+
+        await self.refresh_positions(self.account_hash)
+
+        await self.bus.publish_system(
+            SystemEvent(
+                name="POSITION_REFRESH_REQUESTED",
+                payload=payload,
+            )
+        )
+
+    async def refresh_positions(self, account_hash=None):
+        if self.state_engine is None or self.client is None:
+            return
+
+        if account_hash is None:
+            account_hash = self.account_hash
+
+        if not account_hash:
+            return
+
+        try:
+            fields = None
+            if hasattr(self.client, "Account") and hasattr(self.client.Account, "Fields"):
+                fields = [self.client.Account.Fields.POSITIONS]
+
+            if fields is None:
+                response = self.client.get_account(account_hash)
+            else:
+                response = self.client.get_account(account_hash, fields=fields)
+
+            if inspect.isawaitable(response):
+                response = await response
+
+            account_payload = self._coerce_payload(response)
+            positions = self._extract_positions(account_payload)
+
+            for position in positions:
+                normalized = self._normalize_position(position)
+                if normalized is None:
+                    continue
+                await self.bus.publish_market(
+                    MarketEvent(
+                        event=EventType.POSITION,
+                        payload=normalized,
+                    )
+                )
+        except Exception:
+            logger.exception("Failed refreshing positions from Schwab account")
+
+    def _coerce_payload(self, response):
+        if response is None:
+            return None
+
+        if hasattr(response, "json"):
+            try:
+                return response.json()
+            except Exception:
+                return None
+
+        return response
+
+    def _extract_positions(self, payload):
+        if not isinstance(payload, dict):
+            return []
+
+        if isinstance(payload.get("positions"), list):
+            return payload["positions"]
+
+        for key in ("securitiesAccount", "account"):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                positions = nested.get("positions")
+                if isinstance(positions, list):
+                    return positions
+
+        return []
+
+    def _normalize_position(self, position):
+        if not isinstance(position, dict):
+            return None
+
+        instrument = position.get("instrument") or {}
+        symbol = (
+            position.get("symbol")
+            or instrument.get("symbol")
+            or position.get("underlyingSymbol")
+        )
+
+        if not symbol:
+            return None
+
+        quantity = position.get("quantity")
+        if quantity is None:
+            quantity = position.get("longQuantity")
+        if quantity is None:
+            quantity = position.get("shortQuantity")
+        if quantity is None:
+            quantity = 0
+
+        try:
+            quantity = int(float(quantity))
+        except (TypeError, ValueError):
+            quantity = 0
+
+        if position.get("positionType") == "SHORT" and quantity > 0:
+            quantity = -quantity
+
+        average_price = (
+            position.get("averagePrice")
+            or position.get("average_price")
+            or position.get("costBasis")
+        )
+
+        try:
+            average_price = float(average_price)
+        except (TypeError, ValueError):
+            average_price = 0.0
+
+        return {
+            "symbol": str(symbol).upper(),
+            "quantity": quantity,
+            "average_price": average_price,
+        }
 
     # ======================================================
     # Schwab -> internal format
@@ -339,6 +538,8 @@ class SchwabStreamer:
 
 
         self.stream_client = None
+        self._subscriptions_ready = False
+        self._subscribed_symbols.clear()
 
 
 

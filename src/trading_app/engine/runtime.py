@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import threading
 import queue
+import math
+from dataclasses import replace
 from typing import Optional
 
 
@@ -30,6 +32,8 @@ from trading_app.bus import (
     CommandEvent,
     SystemEvent,
 )
+from trading_app.models.order import Side
+from trading_app.trading_config import QuantityType
 
 class Runtime:
     """
@@ -102,6 +106,45 @@ class Runtime:
     ):
 
         self.gui = gui
+
+    def add_symbol(self, symbol: str) -> bool:
+        """Queue a new market-data subscription requested by the Tk GUI."""
+
+        symbol = symbol.strip().upper()
+
+        if (
+            not symbol
+            or symbol == "-"
+            or not self.running
+            or self.loop is None
+            or self.streamer.has_symbol(symbol)
+        ):
+            return False
+
+        asyncio.run_coroutine_threadsafe(
+            self.streamer.add_symbol(symbol),
+            self.loop,
+        )
+        return True
+
+    def remove_symbol(self, symbol: str) -> bool:
+        """Queue removal of a GUI symbol from the market-data watchlist."""
+
+        symbol = symbol.strip().upper()
+
+        if (
+            not symbol
+            or not self.running
+            or self.loop is None
+            or not self.streamer.has_symbol(symbol)
+        ):
+            return False
+
+        asyncio.run_coroutine_threadsafe(
+            self.streamer.remove_symbol(symbol),
+            self.loop,
+        )
+        return True
 
 
 
@@ -211,13 +254,54 @@ class Runtime:
 
 
         request = self.order_factory.create(
-            instruction
+            self.resolve_instruction_quantity(instruction)
         )
 
 
         return self.submit_order(
             request
         )
+
+    def resolve_instruction_quantity(self, instruction):
+        """Convert a percentage sell instruction into a fixed share quantity.
+
+        Positions remain broker-authoritative: the StateEngine receives their
+        updates from Schwab account activity after executions, rather than
+        changing the cached quantity when an order is merely accepted.
+        """
+
+        if instruction.quantity_type is not QuantityType.PERCENT:
+            return instruction
+
+        if instruction.side is not Side.SELL:
+            raise ValueError("Percentage quantity is supported only for SELL orders.")
+
+        percentage = instruction.quantity_value
+        if not 0 < percentage <= 100:
+            raise ValueError("Percentage sell quantity must be between 1 and 100.")
+
+        position = self.state_engine.get_position(instruction.symbol)
+        available_quantity = int(getattr(position, "quantity", 0))
+        if available_quantity <= 0:
+            raise ValueError(
+                f"No long position available for {instruction.symbol.upper()}"
+            )
+
+        quantity = math.floor(available_quantity * percentage / 100)
+        if quantity <= 0:
+            raise ValueError(
+                "Percentage sell quantity rounds down to zero shares."
+            )
+
+        return replace(
+            instruction,
+            quantity_type=QuantityType.FIXED,
+            quantity_value=quantity,
+        )
+
+    # Kept as an internal alias for callers that used the original helper.
+    def _resolve_instruction_quantity(self, instruction):
+        return self.resolve_instruction_quantity(instruction)
 
     async def market_listener(
         self,

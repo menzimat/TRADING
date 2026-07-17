@@ -76,10 +76,12 @@ class QuoteTable:
         parent: tk.Widget,
         *,
         on_select: Optional[Callable[[str], None]] = None,
+        on_delete: Optional[Callable[[str], None]] = None,
     ):
         self.parent = parent
 
         self.on_select = on_select
+        self.on_delete = on_delete
 
         #
         # Internal row cache:
@@ -99,6 +101,7 @@ class QuoteTable:
         # symbol -> tree iid
         #
         self.symbol_rows: Dict[str, str] = {}
+        self.suppressed_symbols = set()
 
         self.sort_column: Optional[str] = None
         self.sort_reverse = False
@@ -111,6 +114,13 @@ class QuoteTable:
             show="headings",
             selectmode="browse",
         )
+
+        self.context_menu = tk.Menu(self.tree, tearoff=False)
+        self.context_menu.add_command(
+            label="Delete",
+            command=self._delete_context_symbol,
+        )
+        self._context_symbol = None
 
         self._build_columns()
         self._configure_styles()
@@ -162,6 +172,7 @@ class QuoteTable:
             "<<TreeviewSelect>>",
             self._selection_changed,
         )
+        self.tree.bind("<Button-3>", self._show_context_menu)
 
     # ------------------------------------------------------------------
     # Public API
@@ -189,6 +200,9 @@ class QuoteTable:
         """
 
         symbol = symbol.upper()
+
+        if symbol in self.suppressed_symbols:
+            return
 
         old_quote = self.row_cache.get(symbol)
 
@@ -227,6 +241,48 @@ class QuoteTable:
 
             self.symbol_rows[symbol] = iid
 
+    def add_symbol(
+        self,
+        symbol: str,
+    ) -> bool:
+        """Add an empty quote row for a newly watched symbol.
+
+        Quote updates later replace this placeholder through ``update_quote``.
+        """
+
+        symbol = symbol.strip().upper()
+
+        if not symbol or symbol in self.symbol_rows:
+            return False
+
+        self.suppressed_symbols.discard(symbol)
+        self.row_cache[symbol] = {"symbol": symbol}
+        iid = self.tree.insert(
+            "",
+            "end",
+            values=(symbol, "", "", "", "", "", ""),
+            tags=("neutral",),
+        )
+        self.symbol_rows[symbol] = iid
+        return True
+
+
+    def select_symbol(
+        self,
+        symbol: str,
+    ) -> bool:
+        """Focus and select a displayed symbol."""
+
+        iid = self.find_symbol(symbol)
+
+        if not iid:
+            return False
+
+        self.tree.selection_set(iid)
+        self.tree.focus(iid)
+        self.tree.see(iid)
+        return True
+
 
     def remove_symbol(
         self,
@@ -234,6 +290,7 @@ class QuoteTable:
     ):
 
         symbol = symbol.upper()
+        self.suppressed_symbols.add(symbol)
 
         iid = self.symbol_rows.pop(
             symbol,
@@ -258,6 +315,7 @@ class QuoteTable:
 
         self.row_cache.clear()
         self.symbol_rows.clear()
+        self.suppressed_symbols.clear()
 
 
     def get_quote(
@@ -311,6 +369,39 @@ class QuoteTable:
         if symbol and self.on_select:
 
             self.on_select(symbol)
+
+    def _show_context_menu(self, event):
+        """Show Delete only for a right-click on a symbol cell."""
+
+        iid = self.tree.identify_row(event.y)
+
+        if (
+            not iid
+            or self.tree.identify_region(event.x, event.y) != "cell"
+            or self.tree.identify_column(event.x) != "#1"
+        ):
+            return
+
+        values = self.tree.item(iid, "values")
+        if not values:
+            return
+
+        self._context_symbol = values[0]
+        self.tree.selection_set(iid)
+        self.tree.focus(iid)
+
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+        return "break"
+
+    def _delete_context_symbol(self):
+        if self._context_symbol and self.on_delete:
+            self.on_delete(self._context_symbol)
+
+        self._context_symbol = None
 
 
     # ------------------------------------------------------------------

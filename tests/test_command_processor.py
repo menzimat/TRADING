@@ -6,7 +6,11 @@ from trading_app.services.command_processor import CommandProcessor
 
 
 class DummyBus:
+    def __init__(self):
+        self.events = []
+
     async def publish_system(self, event):
+        self.events.append(event)
         return None
 
 
@@ -14,14 +18,24 @@ class DummyStateEngine:
     pass
 
 
+class PositionAwareStateEngine:
+    def __init__(self, positions=None):
+        self.positions = positions or {}
+
+    def get_position(self, symbol):
+        return self.positions.get(symbol.upper())
+
+
 class DummyClient:
     def __init__(self):
         self.account_hash = None
         self.accounts = []
+        self.placed_orders = []
 
     async def place_order(self, account_hash, payload):
         self.last_account_hash = account_hash
         self.last_payload = payload
+        self.placed_orders.append((account_hash, payload))
         return {"ok": True}
 
 
@@ -100,6 +114,54 @@ class CommandProcessorTests(unittest.TestCase):
         self.assertEqual(diagnostics["status_code"], 403)
         self.assertEqual(diagnostics["headers"], {"x-error": "boom"})
         self.assertEqual(diagnostics["body"], '{"error":"bad"}')
+
+    def test_sell_order_caps_quantity_to_cached_position(self):
+        bus = DummyBus()
+        client = DummyClient()
+        client.account_hash = "acct-1"
+        state_engine = PositionAwareStateEngine(
+            {"AAPL": type("Position", (), {"quantity": 3})()}
+        )
+        processor = CommandProcessor(
+            client=client,
+            bus=bus,
+            state_engine=state_engine,
+        )
+
+        request = OrderRequest(
+            symbol="AAPL",
+            quantity=10,
+            side=Side.SELL,
+            order_type=OrderType.MARKET,
+        )
+
+        asyncio.run(processor.submit_order(request))
+
+        self.assertEqual(client.placed_orders[0][1]["quantity"], 3)
+
+    def test_sell_without_position_is_rejected(self):
+        bus = DummyBus()
+        client = DummyClient()
+        client.account_hash = "acct-1"
+        processor = CommandProcessor(
+            client=client,
+            bus=bus,
+            state_engine=PositionAwareStateEngine(),
+        )
+
+        request = OrderRequest(
+            symbol="AAPL",
+            quantity=1,
+            side=Side.SELL,
+            order_type=OrderType.MARKET,
+        )
+
+        asyncio.run(processor.submit_order(request))
+
+        self.assertEqual(client.placed_orders, [])
+        self.assertTrue(
+            any(event.name == "ORDER_REJECTED" for event in bus.events)
+        )
 
 
 if __name__ == "__main__":

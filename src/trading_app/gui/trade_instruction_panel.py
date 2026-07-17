@@ -60,11 +60,19 @@ class TradeInstructionPanel:
         on_submit: Optional[
             Callable[[TradeInstruction], None]
         ] = None,
+        on_symbol_entered: Optional[
+            Callable[[str], None]
+        ] = None,
+        resolve_instruction: Optional[
+            Callable[[TradeInstruction], TradeInstruction]
+        ] = None,
         trading_config=None,
         trade_instruction_factory=None,
     ):
         self._loading_instruction = False
         self.on_submit = on_submit
+        self.on_symbol_entered = on_symbol_entered
+        self.resolve_instruction = resolve_instruction
 
         self.trading_config = (
             trading_config
@@ -675,14 +683,28 @@ class TradeInstructionPanel:
             sticky="w",
         )
 
-        ttk.Entry(
+        entry = ttk.Entry(
             self.frame,
             textvariable=variable,
-        ).grid(
+        )
+        entry.grid(
             row=row,
             column=1,
             sticky="ew",
         )
+
+        if label == "Symbol":
+            self.symbol_entry = entry
+            entry.bind("<Return>", self._symbol_entered)
+
+
+    def _symbol_entered(self, event=None):
+        """Ask the application to watch the symbol typed into the panel."""
+
+        if self.on_symbol_entered:
+            self.on_symbol_entered(self.symbol_var.get())
+
+        return "break"
 
 
     def _label_display(
@@ -1029,6 +1051,52 @@ class TradeInstructionPanel:
             "schwab_payload": payload,
         }
 
+    def apply_template_to_panel(
+        self,
+        template_name: str,
+        *,
+        quote=None,
+        side=None,
+        quantity=None,
+        review_before_send=None,
+    ) -> TradeInstruction:
+        if not self.trade_instruction_factory:
+            raise RuntimeError("TradeInstructionFactory missing.")
+
+        if not self.selected_symbol:
+            raise ValueError("No symbol selected.")
+
+        instruction = self.trade_instruction_factory.create(
+            template_name=template_name,
+            symbol=self.selected_symbol,
+            quote=quote,
+        )
+
+        if side is not None:
+            instruction.side = side
+
+        if quantity is not None:
+            instruction.quantity_value = int(quantity)
+
+        if review_before_send is not None:
+            instruction.review_before_send = review_before_send
+
+        if self.accounts:
+            current_account = self.account_var.get()
+            if current_account:
+                instruction.account = current_account
+                for account in self.accounts:
+                    if account.display_name == current_account:
+                        instruction.account_hash = account.account_hash
+                        break
+                else:
+                    instruction.account_hash = None
+
+        self.instruction = instruction
+        self._display_instruction()
+        self._recalculate()
+        return instruction
+
     def _display_instruction(self):
 
         i = self.instruction
@@ -1145,7 +1213,17 @@ class TradeInstructionPanel:
 
         self._recalculate()
 
-        debug_payload = self._build_debug_payload(self.instruction)
+        submission_instruction = self.instruction
+        if self.resolve_instruction:
+            try:
+                submission_instruction = self.resolve_instruction(
+                    self.instruction
+                )
+            except ValueError as exc:
+                messagebox.showerror("Invalid Order", str(exc))
+                return
+
+        debug_payload = self._build_debug_payload(submission_instruction)
         print(
             "SCHWAB ORDER DEBUG",
             pprint.pformat(debug_payload),
@@ -1153,14 +1231,7 @@ class TradeInstructionPanel:
         )
 
         if self.instruction.review_before_send:
-            review_text = (
-                f"Symbol: {self.instruction.symbol}\n"
-                f"Side: {self.instruction.side.name}\n"
-                f"Order Type: {self.instruction.order_type.name}\n"
-                f"Quantity: {self.instruction.quantity}\n"
-                f"Price: {self._fmt(self.instruction.order_price)}\n"
-                f"TIF: {self.instruction.tif.name}"
-            )
+            review_text = self._review_text(submission_instruction)
 
             if not messagebox.askyesno(
                 "Review Order",
@@ -1172,8 +1243,21 @@ class TradeInstructionPanel:
         if self.on_submit:
 
             self.on_submit(
-                self.instruction
+                submission_instruction
             )
+
+    @classmethod
+    def _review_text(cls, instruction):
+        """Return review text for the exact instruction that will be sent."""
+
+        return (
+            f"Symbol: {instruction.symbol}\n"
+            f"Side: {instruction.side.name}\n"
+            f"Order Type: {instruction.order_type.name}\n"
+            f"Quantity: {instruction.quantity}\n"
+            f"Price: {cls._fmt(instruction.order_price)}\n"
+            f"TIF: {instruction.tif.name}"
+        )
 
 
     @staticmethod
