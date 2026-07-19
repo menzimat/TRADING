@@ -63,8 +63,14 @@ class TradeInstructionPanel:
         on_symbol_entered: Optional[
             Callable[[str], None]
         ] = None,
+        on_account_changed: Optional[
+            Callable[[str], None]
+        ] = None,
         resolve_instruction: Optional[
             Callable[[TradeInstruction], TradeInstruction]
+        ] = None,
+        on_get_quote: Optional[
+            Callable[[str], None]
         ] = None,
         trading_config=None,
         trade_instruction_factory=None,
@@ -72,7 +78,9 @@ class TradeInstructionPanel:
         self._loading_instruction = False
         self.on_submit = on_submit
         self.on_symbol_entered = on_symbol_entered
+        self.on_account_changed = on_account_changed
         self.resolve_instruction = resolve_instruction
+        self.on_get_quote = on_get_quote
 
         self.trading_config = (
             trading_config
@@ -825,9 +833,13 @@ class TradeInstructionPanel:
         ]
 
         self.account_box["values"] = values
-
+        
         if values:
             self.account_var.set(values[0])
+            if self.on_account_changed and self.accounts:
+                self.on_account_changed(
+                    self.accounts[0].account_hash
+                )
 
             if self.instruction is not None:
                 self.instruction.account = values[0]
@@ -1019,22 +1031,39 @@ class TradeInstructionPanel:
         self,
         event=None,
     ):
-        if not self.instruction:
-            return
+        selected_hash = None
 
-        selected_name = self.account_var.get()
+        if self.accounts:
 
-        if not self.accounts:
-            self.instruction.account_hash = None
-            return
+            selected_name = self.account_var.get()
 
-        for account in self.accounts:
-            if account.display_name == selected_name:
-                self.instruction.account = account.display_name
-                self.instruction.account_hash = account.account_hash
-                return
+            for account in self.accounts:
 
-        self.instruction.account_hash = None
+                if account.display_name == selected_name:
+
+                    selected_hash = account.account_hash
+
+                    if self.instruction:
+
+                        self.instruction.account = (
+                            account.display_name
+                        )
+
+                        self.instruction.account_hash = (
+                            account.account_hash
+                        )
+
+                    break
+
+        #
+        # Notify the application that the selected
+        # account changed.
+        #
+        if self.on_account_changed:
+
+            self.on_account_changed(
+                selected_hash
+            )
 
     @staticmethod
     def _build_debug_payload(
@@ -1104,6 +1133,10 @@ class TradeInstructionPanel:
         self.account_var.set(
             i.account
         )
+        #
+        # Keep Runtime synchronized with the displayed account.
+        #
+        self._account_selected()
 
         self.template_var.set(
             i.template_name

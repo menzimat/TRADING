@@ -172,7 +172,7 @@ class HotkeyManager:
         elif action == "PANIC_EXIT":
             command = CommandType.PANIC
         elif action == "REFRESH_QUOTES":
-            print("Refresh quotes action requested")
+            self.runtime.refresh_positions()
             return
 
         if command is not None and self.runtime.loop is not None:

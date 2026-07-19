@@ -158,32 +158,35 @@ class Engine:
 
         self.gui = TradingApplication(
 
-            trading_config=
-                self.trading_cfg,
+            trading_config= self.trading_cfg,
 
-            trade_instruction_factory=
-                self.trade_instruction_factory,
+            trade_instruction_factory= self.trade_instruction_factory,
+
             get_quote=self.state_engine.get_quote,
-            on_order=
-                self.runtime.submit_order,
 
-            on_instruction_submit=
-                self.runtime.submit_instruction,
+            on_order= self.runtime.submit_order,
 
-            on_connect=
-                self.start_backend,
+            on_instruction_submit= self.runtime.submit_instruction,
 
-            on_disconnect=
-                self.stop_backend,
+            on_connect= self.start_backend,
 
-            on_add_symbol=
-                self.runtime.add_symbol,
+            on_disconnect= self.stop_backend,
 
-            on_remove_symbol=
-                self.runtime.remove_symbol,
+            on_add_symbol= self.runtime.add_symbol,
 
-            resolve_instruction=
-                self.runtime.resolve_instruction_quantity,
+            on_remove_symbol= self.runtime.remove_symbol,
+
+            resolve_instruction= self.runtime.resolve_instruction_quantity,
+
+            on_refresh_positions= self.runtime.refresh_positions,
+
+            on_account_changed= self.runtime.set_selected_account,
+
+            on_ensure_symbol= self.runtime.ensure_symbol,
+
+            on_flatten_position= self.runtime.flatten_position,
+
+            on_get_quote= self.state_engine.get_quote,
         )
 
         self.runtime.attach_gui(self.gui)
@@ -198,16 +201,14 @@ class Engine:
         )
 
     def _get_selected_account_hash(self):
+        """
+        Return the currently selected Schwab account.
+        """
+
         if self.runtime is None:
             return None
 
-        if self.runtime.selected_account_hash:
-            return self.runtime.selected_account_hash
-
-        if self.runtime.accounts:
-            return self.runtime.accounts[0].account_hash
-
-        return None
+        return self.runtime.selected_account_hash
         
     # =====================================================
     # Lifecycle

@@ -47,8 +47,7 @@ class QuoteTable:
         "bid",
         "ask",
         "volume",
-        "change",
-        "change_pct",
+        "position",
     )
 
     HEADINGS = {
@@ -57,8 +56,7 @@ class QuoteTable:
         "bid": "Bid",
         "ask": "Ask",
         "volume": "Volume",
-        "change": "Change",
-        "change_pct": "%",
+        "position": "Position",
     }
 
     COLUMN_WIDTHS = {
@@ -67,8 +65,7 @@ class QuoteTable:
         "bid": 80,
         "ask": 80,
         "volume": 100,
-        "change": 90,
-        "change_pct": 80,
+        "position": 90,
     }
 
     def __init__(
@@ -94,6 +91,7 @@ class QuoteTable:
         # }
         #
         self.row_cache: Dict[str, Any] = {}
+        self.position_cache: Dict[str, int] = {}
 
         #
         # Tree item lookup:
@@ -260,7 +258,7 @@ class QuoteTable:
         iid = self.tree.insert(
             "",
             "end",
-            values=(symbol, "", "", "", "", "", ""),
+            values=(symbol, "", "", "", "", self._position_value(symbol)),
             tags=("neutral",),
         )
         self.symbol_rows[symbol] = iid
@@ -306,6 +304,29 @@ class QuoteTable:
             None,
         )
 
+    def update_position(self, symbol: str, quantity: int):
+        """Update a displayed symbol's aggregate Schwab position."""
+
+        symbol = symbol.upper()
+        self.position_cache[symbol] = int(quantity)
+        iid = self.symbol_rows.get(symbol)
+        if not iid:
+            return
+
+        quote = self.row_cache.get(symbol, {"symbol": symbol})
+        self.tree.item(iid, values=self._quote_to_row(symbol, quote))
+
+    def set_positions(self, quantities):
+        """Replace displayed positions when the selected account changes."""
+
+        self.position_cache = {
+            symbol.upper(): int(quantity)
+            for symbol, quantity in quantities.items()
+        }
+        for symbol, iid in self.symbol_rows.items():
+            quote = self.row_cache.get(symbol, {"symbol": symbol})
+            self.tree.item(iid, values=self._quote_to_row(symbol, quote))
+
 
     def clear(self):
 
@@ -314,6 +335,7 @@ class QuoteTable:
             self.tree.delete(iid)
 
         self.row_cache.clear()
+        self.position_cache.clear()
         self.symbol_rows.clear()
         self.suppressed_symbols.clear()
 
@@ -470,9 +492,11 @@ class QuoteTable:
             self._field(quote, "bid"),
             self._field(quote, "ask"),
             self._field(quote, "volume"),
-            self._field(quote, "change"),
-            self._field(quote, "change_pct"),
+            self._position_value(symbol),
         )
+
+    def _position_value(self, symbol):
+        return self.position_cache.get(symbol.upper(), 0)
 
 
     @staticmethod

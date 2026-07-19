@@ -95,6 +95,10 @@ class ApplicationState:
         default_factory=dict
     )
 
+    positions_by_account: Dict[str, Dict[str, PositionState]] = field(
+        default_factory=dict
+    )
+
     orders: Dict[str, Any] = field(
         default_factory=dict
     )
@@ -176,6 +180,13 @@ class StateEngine:
 
             self.update_position(
                 event.payload
+            )
+
+        elif event.event == EventType.POSITION_SNAPSHOT:
+
+            await self.replace_account_positions(
+                event.payload["account_hash"],
+                event.payload["positions"],
             )
 
 
@@ -287,6 +298,52 @@ class StateEngine:
                 ),
         )
 
+    async def replace_account_positions(self, account_hash, positions):
+        """Replace one account snapshot and publish changed aggregate quantities."""
+
+        previous = self.state.positions_by_account.get(account_hash, {})
+        current = {}
+        for position in positions:
+            symbol = position["symbol"].upper()
+            current[symbol] = PositionState(
+                symbol=symbol,
+                quantity=int(position.get("quantity", 0)),
+                average_price=float(position.get("average_price", 0.0)),
+            )
+
+        self.state.positions_by_account[account_hash] = current
+        quantities = {}
+        for symbol in set(previous) | set(current):
+            matching_positions = [
+                account_positions[symbol]
+                for account_positions in self.state.positions_by_account.values()
+                if symbol in account_positions
+            ]
+            quantity = sum(position.quantity for position in matching_positions)
+            self.state.positions[symbol] = PositionState(
+                symbol=symbol,
+                quantity=quantity,
+                average_price=(
+                    matching_positions[0].average_price
+                    if matching_positions else 0.0
+                ),
+            )
+            quantities[symbol] = quantity
+
+        if quantities:
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="POSITIONS_UPDATED",
+                    payload={
+                        "account_hash": account_hash,
+                        "quantities": {
+                            symbol: position.quantity
+                            for symbol, position in current.items()
+                        },
+                    },
+                )
+            )
+
 
 
     def update_order(
@@ -346,11 +403,72 @@ class StateEngine:
     def get_position(
         self,
         symbol: str,
+        account_hash: str | None = None,
     ) -> Optional[PositionState]:
 
-        return self.state.positions.get(
-            symbol.upper()
+        symbol = symbol.upper()
+
+        #
+        # Explicit account lookup.
+        #
+        if account_hash:
+
+            account_positions = (
+                self.state.positions_by_account.get(
+                    account_hash,
+                    {},
+                )
+            )
+
+            position = account_positions.get(symbol)
+
+            print(
+                f"get_position: {symbol}; "
+                f"ACCT: {account_hash}; "
+                f"Position: {position}"
+            )
+
+            return position
+
+        #
+        # Legacy/global lookup.
+        #
+        position = self.state.positions.get(symbol)
+
+        print(
+            f"get_position: {symbol}; "
+            f"ACCT: GLOBAL; "
+            f"Position: {position}"
         )
+
+        return position
+
+    def get_position_quantity(
+        self,
+        symbol: str,
+        account_hash: str | None = None,
+    ) -> int:
+
+        position = self.get_position(
+            symbol=symbol,
+            account_hash=account_hash,
+        )
+
+        if position is None:
+            return 0
+
+        return abs(position.quantity)
+
+    def get_account_position_quantities(self, account_hash: str) -> Dict[str, int]:
+        """Return the current quantities for one Schwab account."""
+
+        return {
+            symbol: position.quantity
+            for symbol, position in self.state.positions_by_account.get(
+                account_hash,
+                {},
+            ).items()
+        }
 
 
 

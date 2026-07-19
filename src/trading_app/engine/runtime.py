@@ -30,9 +30,11 @@ from typing import Optional
 
 from trading_app.bus import (
     CommandEvent,
+    CommandType,
     SystemEvent,
 )
-from trading_app.models.order import Side
+from trading_app.models.trade_instruction import TradeInstruction
+from trading_app.models.order import OrderRequest, OrderType, Side, TimeInForce
 from trading_app.trading_config import QuantityType
 
 class Runtime:
@@ -146,7 +148,94 @@ class Runtime:
         )
         return True
 
+    def flatten_position(self, symbol: str, ) -> bool:
 
+        if not self.running:
+            return False
+
+        if self.loop is None:
+            return False
+
+        symbol = symbol.strip().upper()
+
+        if not symbol:
+            return False
+        
+        request = OrderRequest(
+                    symbol=symbol,
+                    account_hash=self.selected_account_hash,
+                    quantity=self.state_engine.get_position(symbol,self.selected_account_hash),
+                    side=Side.SELL,
+                    order_type=OrderType.MARKET,
+                    tif=TimeInForce.DAY,
+        )
+
+        event = CommandEvent(command=CommandType.FLATTEN, payload=request)
+
+        asyncio.run_coroutine_threadsafe(
+            self.bus.publish_command(event),
+            self.loop,
+        )
+
+        return True
+
+    def refresh_positions(self) -> bool:
+        """Request a low-frequency Schwab position refresh."""
+
+        if not self.running or self.loop is None:
+            return False
+
+        asyncio.run_coroutine_threadsafe(
+            self.streamer.refresh_positions(),
+            self.loop,
+        )
+        return True
+
+    def old_set_selected_account(
+        self,
+        account_hash: str | None,
+    ) -> bool:
+        """
+        Update the currently selected account and refresh the
+        quote table positions for that account.
+        """
+
+        self.selected_account_hash = account_hash
+
+        if (
+            account_hash is None
+            or self.gui is None
+        ):
+            return False
+
+        quantities = (
+            self.state_engine.get_account_position_quantities(
+                account_hash
+            )
+        )
+
+        self.gui.quote_table.set_positions(
+            quantities
+        )
+
+        return True
+
+    def set_selected_account(self, account_hash):
+
+        if (
+            account_hash is None
+            or self.gui is None
+            or account_hash == self.selected_account_hash
+        ):
+            return
+
+        self.selected_account_hash = account_hash
+
+        self.gui.quote_table.set_positions(
+            self.state_engine.get_account_position_quantities(
+                account_hash
+             )
+         )
 
     # ==========================================================
     # Startup
@@ -231,7 +320,48 @@ class Runtime:
 
             pass
 
+    def ensure_symbol(self, symbol:str) -> bool:
+        """
+        Ensure a position symbol exists in the GUI watchlist.
 
+        If the symbol is not already subscribed, queue a market-data
+        subscription. The GUI row is created immediately so the
+        position is visible before the first quote arrives.
+
+        Returns
+        -------
+        bool
+            True if a new row was added.
+        """
+        symbol = symbol.strip().upper()
+
+        if not symbol:
+            return False
+        #
+        # Already displayed?
+        #
+        if self.gui.quote_table.find_symbol(symbol):
+            return
+
+        #
+        # Start market-data subscription if needed.
+        #
+        if (
+            self.running
+            and self.loop is not None
+            and not self.streamer.has_symbol(symbol)
+        ):
+            asyncio.run_coroutine_threadsafe(
+                self.streamer.add_symbol(symbol),
+                self.loop,
+            )
+
+        #
+        # Create placeholder row immediately.
+        #
+        self.gui.quote_table.add_symbol(symbol)
+
+        return True
 
     # ==========================================================
     # EventBus Consumers
@@ -280,11 +410,31 @@ class Runtime:
         if not 0 < percentage <= 100:
             raise ValueError("Percentage sell quantity must be between 1 and 100.")
 
-        position = self.state_engine.get_position(instruction.symbol)
-        available_quantity = int(getattr(position, "quantity", 0))
+        account_hash = (
+            instruction.account_hash
+            or self.selected_account_hash
+        )
+
+        position = self.state_engine.get_position(
+            instruction.symbol,
+            account_hash
+        )
+
+        available_quantity = int(
+            getattr(position, "quantity", 0)
+        )
+
         if available_quantity <= 0:
+            account_text = (
+                instruction.account
+                or account_hash
+                or "selected account"
+            )
+
             raise ValueError(
-                f"No long position available for {instruction.symbol.upper()}"
+                f"No long position available for "
+                f"{instruction.symbol.upper()} "
+                f"in {account_text}."
             )
 
         quantity = math.floor(available_quantity * percentage / 100)
@@ -389,10 +539,24 @@ class Runtime:
         print("_handle_gui_event:", type(event), event)
         if isinstance(event, SystemEvent):
             if event.name == "ACCOUNTS_LOADED":
+
                 self.accounts = list(event.payload or [])
+
+                self.gui.set_accounts(
+                    self.accounts
+                )
+
                 if self.accounts:
-                    self.selected_account_hash = self.accounts[0].account_hash
-                self.gui.set_accounts(self.accounts)
+
+                    #
+                    # Default to the first account shown in
+                    # the GUI and immediately display only
+                    # that account's positions.
+                    #
+                    self.set_selected_account(
+                        self.accounts[0].account_hash
+                    )
+
                 return
             elif event.name == "PRICE_UPDATED":
                 payload = event.payload
@@ -400,6 +564,27 @@ class Runtime:
                     payload["symbol"],
                     payload,
                 )
+                return
+            elif event.name == "POSITIONS_UPDATED":
+
+                payload = event.payload or {}
+
+                account_hash = payload.get("account_hash")
+                quantities = payload.get("quantities", {})
+
+                #
+                # Ignore updates for accounts that are not currently selected.
+                #
+                if (
+                    self.selected_account_hash is not None
+                    and account_hash != self.selected_account_hash
+                ):
+                    return
+
+                self.gui.update_positions(quantities)
+                return
+            elif event.name == "ORDER_ACCEPTED":
+                self.refresh_positions()
                 return
             elif event.name == "CONNECTED":
                 self.gui.set_connection_status(
@@ -455,84 +640,6 @@ class Runtime:
 
         self.submit_order(request)
 
-    def old_submit_template(
-        self,
-        template_name: str,
-        symbol: str | None = None,
-    ) -> bool:
-        """
-        Submit an order using a named trading template.
-
-        This method is intended for hotkeys and future automation.
-        It delegates construction of the OrderRequest to the
-        OrderFactory.
-
-        Parameters
-        ----------
-        template_name
-            Name of the template in trading.yaml.
-
-        symbol
-            Optional symbol override.  If omitted, the currently
-            selected GUI symbol is used.
-
-        Returns
-        -------
-        bool
-            True if the order was accepted for asynchronous
-            processing.
-        """
-
-        if not self.running:
-            return False
-
-        #
-        # Determine the active symbol.
-        #
-        if symbol is None:
-
-            #
-            # TODO:
-            # Replace with the application's authoritative
-            # source for the currently selected symbol.
-            #
-            symbol = self.gui.get_selected_symbol()
-
-        #
-        # Obtain the latest QuoteState.
-        #
-        quote = self.state_engine.get_quote(symbol)
-
-        if quote is None:
-
-            print(f"No QuoteState available for {symbol}")
-
-            return False
-
-        #
-        # Build an OrderRequest from the template.
-        #
-        from trading_app.services.order_factory import OrderFactory
-
-        request = OrderFactory.build_from_template(
-            trading_config=self.gui.trading_config,
-            template_name=template_name,
-            symbol=symbol,
-            quote=quote,
-        )
-
-        if request is None:
-
-            return False
-
-        #
-        # Submit through the normal command path.
-        #
-        return self.submit_order(request)
-
-    # ==========================================================
-    # GUI -> Async command path
-    # ==========================================================
 
     def submit_order(
     self,

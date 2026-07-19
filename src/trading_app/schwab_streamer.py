@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import json
 from pathlib import Path
 from trading_app.models.broker_account import BrokerAccount
 from schwab.streaming import StreamClient
@@ -60,6 +61,7 @@ class SchwabStreamer:
         self.stream_client = None
 
         self.account_hash = None
+        self.account_hashes = []
 
         self.symbols = self.load_symbols()
         self._subscribed_symbols = set()
@@ -262,6 +264,7 @@ class SchwabStreamer:
         )
 
         self.account_hash = account_hash
+        self.account_hashes = [acct["hashValue"] for acct in account_data]
 
 
         logger.info(
@@ -296,7 +299,7 @@ class SchwabStreamer:
         )
 
 
-        await self.refresh_positions(self.account_hash)
+        await self.refresh_positions()
 
         if self.symbols:
             await self._subscribe_symbols(self.symbols)
@@ -348,7 +351,7 @@ class SchwabStreamer:
         if not payload:
             return
 
-        await self.refresh_positions(self.account_hash)
+        await self.refresh_positions()
 
         await self.bus.publish_system(
             SystemEvent(
@@ -361,12 +364,14 @@ class SchwabStreamer:
         if self.state_engine is None or self.client is None:
             return
 
-        if account_hash is None:
-            account_hash = self.account_hash
+        account_hashes = [account_hash] if account_hash else self.account_hashes
+        if not account_hashes and self.account_hash:
+            account_hashes = [self.account_hash]
 
-        if not account_hash:
-            return
+        for account_hash in account_hashes:
+            await self._refresh_account_positions(account_hash)
 
+    async def _refresh_account_positions(self, account_hash):
         try:
             fields = None
             if hasattr(self.client, "Account") and hasattr(self.client.Account, "Fields"):
@@ -377,24 +382,56 @@ class SchwabStreamer:
             else:
                 response = self.client.get_account(account_hash, fields=fields)
 
+            logger.info(
+                "ACCOUNT RESPONSE\n%s",
+                json.dumps(response, indent=2, default=str),
+            )
+
             if inspect.isawaitable(response):
                 response = await response
 
             account_payload = self._coerce_payload(response)
-            positions = self._extract_positions(account_payload)
 
+            logger.info(
+                "Account payload keys: %s",
+                list(account_payload.keys()) if isinstance(account_payload, dict) else type(account_payload),
+            )
+
+            logger.info(
+                "ACCOUNT PAYLOAD\n%s",
+                json.dumps(account_payload, indent=2, default=str),
+            )
+            positions = self._extract_positions(account_payload)
+            logger.info(
+                "Extracted %d raw positions",
+                len(positions),
+            )
+
+            normalized_positions = []
             for position in positions:
                 normalized = self._normalize_position(position)
+                logger.info(
+                    "Normalized: %s",
+                    normalized,
+                )
                 if normalized is None:
                     continue
-                await self.bus.publish_market(
-                    MarketEvent(
-                        event=EventType.POSITION,
-                        payload=normalized,
-                    )
+                normalized_positions.append(normalized)
+
+            await self.bus.publish_market(
+                MarketEvent(
+                    event=EventType.POSITION_SNAPSHOT,
+                    payload={
+                        "account_hash": account_hash,
+                        "positions": normalized_positions,
+                    },
                 )
+            )
         except Exception:
-            logger.exception("Failed refreshing positions from Schwab account")
+            logger.exception(
+                "Failed refreshing positions from Schwab account %s",
+                account_hash,
+            )
 
     def _coerce_payload(self, response):
         if response is None:
@@ -409,6 +446,33 @@ class SchwabStreamer:
         return response
 
     def _extract_positions(self, payload):
+        """
+        Locate the first 'positions' list anywhere in the Schwab account payload.
+        """
+
+        if isinstance(payload, list):
+            for item in payload:
+                positions = self._extract_positions(item)
+                if positions:
+                    return positions
+            return []
+
+        if not isinstance(payload, dict):
+            return []
+
+        positions = payload.get("positions")
+        if isinstance(positions, list):
+            return positions
+
+        for value in payload.values():
+            if isinstance(value, (dict, list)):
+                positions = self._extract_positions(value)
+                if positions:
+                    return positions
+
+        return []
+
+    def old_extract_positions(self, payload):
         if not isinstance(payload, dict):
             return []
 

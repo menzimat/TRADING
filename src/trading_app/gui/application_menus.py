@@ -46,6 +46,7 @@ class ApplicationMenus:
         on_cancel_orders: Optional[Callable] = None,
         on_flatten_position: Optional[Callable] = None,
         on_about: Optional[Callable] = None,
+        on_refresh: Optional[Callable] = None,
     ):
 
         self.root = root
@@ -54,20 +55,15 @@ class ApplicationMenus:
         self.on_disconnect = on_disconnect
         self.on_exit = on_exit
 
-        self.on_cancel_orders = (
-            on_cancel_orders
-        )
+        self.on_cancel_orders = ( on_cancel_orders )
 
-        self.on_flatten_position = (
-            on_flatten_position
-        )
+        self.on_flatten_position = ( on_flatten_position )
 
         self.on_about = on_about
+        self.on_refresh = on_refresh
 
 
-        self.menu = tk.Menu(
-            root
-        )
+        self.menu = tk.Menu( root )
 
         self._build()
 
@@ -168,6 +164,7 @@ class ApplicationMenus:
 
         menu.add_command(
             label="Refresh",
+            command=self._refresh,
         )
 
 
@@ -235,3 +232,7 @@ class ApplicationMenus:
 
         if self.on_about:
             self.on_about()
+
+    def _refresh(self):
+        if self.on_refresh:
+            self.on_refresh()

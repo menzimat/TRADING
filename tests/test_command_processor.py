@@ -22,7 +22,7 @@ class PositionAwareStateEngine:
     def __init__(self, positions=None):
         self.positions = positions or {}
 
-    def get_position(self, symbol):
+    def get_position(self, symbol, account_hash=None):
         return self.positions.get(symbol.upper())
 
 

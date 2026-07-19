@@ -32,7 +32,7 @@ from trading_app.bus import (
     CommandType,
     SystemEvent,
 )
-
+from trading_app.models.order import OrderRequest, OrderType, Side, TimeInForce
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class CommandProcessor:
         request,
         side: str,
     ):
-
+        print(f"submit_market_order:", request)
         await self.submit_order(
             request,
         )
@@ -213,25 +213,22 @@ class CommandProcessor:
         #
         # Validate symbol
         #
+        print("submit_order:", request)
 
-        symbol = (
-            request.symbol.upper()
-        )
+        
+        symbol = getattr(request, "symbol", None)
+        side = getattr(request, "side", None)
 
-
-        if not symbol:
-
-            raise ValueError(
-                "Missing symbol"
-            )
-
-
+        if symbol:
+            symbol = symbol.upper()
+        else:
+            raise ValueError("Missing symbol")
 
         try:
-            if request.side.name == "SELL":
+            if side == "SELL":
                 await self._enforce_sell_position_limit(request)
         except Exception as exc:
-            logger.exception("Sell validation failed for %s", request.symbol)
+            logger.exception("Sell validation failed for %s", symbol)
             await self.bus.publish_system(
                 SystemEvent(
                     name="ORDER_REJECTED",
@@ -275,6 +272,9 @@ class CommandProcessor:
         #
 
         try:
+            #This initiates the order placement via the local async self.place_order() method
+            #which in turm calls the exposed Schwab place_order() method of the schwab-py package.
+            
             response = await (
                 self.place_order(
                     order_payload,
@@ -326,7 +326,7 @@ class CommandProcessor:
             return
 
         symbol = request.symbol.upper()
-        position = self.state_engine.get_position(symbol)
+        position = self.state_engine.get_position(symbol, request.account_hash)
 
         if position is None or position.quantity <= 0:
             raise ValueError(f"No long position available for {symbol}")
@@ -392,6 +392,9 @@ class CommandProcessor:
             )
 
         try:
+            #This is the Schwab Call to the exposed place_order() method, 
+            #not the local async self.place_order() method.
+
             response = place_order(account_hash, payload)
             if inspect.isawaitable(response):
                 response = await response
@@ -494,55 +497,61 @@ class CommandProcessor:
         payload,
     ):
 
-        symbol = (
-            payload.symbol
-        )
+        print(f"FLATTEN_POSITION: {payload}")
 
+        symbol = payload.symbol.upper()
 
-        position = (
-            self.state_engine.get_position(
-                symbol
-            )
-        )
+        #
+        # Use ONE position lookup only.
+        #
+        position = self.state_engine.get_position(symbol=symbol,account_hash=payload.account_hash,)
 
-
-        if not position:
+        if position is None:
 
             await self.bus.publish_system(
                 SystemEvent(
                     name="FLATTEN_REJECTED",
-                    payload=
-                    "No position",
+                    payload="No position",
                 )
             )
-
             return
 
-
-
+        #
+        # Determine actual side from the live position.
+        #
         side = (
-            "SELL"
+            Side.SELL
             if position.quantity > 0
-            else "BUY"
+            else Side.BUY
         )
 
+        quantity = abs(position.quantity)
 
-        request = {
+        if quantity <= 0:
 
-            "symbol":
-                symbol,
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="FLATTEN_REJECTED",
+                    payload="Position quantity is zero",
+                )
+            )
+            return
 
-            "quantity":
-                abs(
-                    position.quantity
-                ),
-
-        }
-
+        request = OrderRequest(
+            symbol=symbol,
+            account_hash=(
+                payload.account_hash
+                or position.account_hash
+            ),
+            quantity=quantity,
+            side=side,
+            order_type=OrderType.MARKET,
+            tif=TimeInForce.DAY,
+        )
 
         await self.submit_market_order(
             request,
-            side,
+            side.name,
         )
 
 

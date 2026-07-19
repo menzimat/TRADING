@@ -41,6 +41,8 @@ class EventType(Enum):
 
     POSITION = auto()
 
+    POSITION_SNAPSHOT = auto()
+
     ORDER = auto()
 
     ACCOUNT = auto()

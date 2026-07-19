@@ -28,6 +28,14 @@ from trading_app.gui.table_renderer import (
     QuoteTable,
 )
 
+from trading_app.engine.runtime import (
+    Runtime
+)
+
+from trading_app.engine.state_engine import (
+    QuoteState
+)
+
 from trading_app.gui.status_bar import (
     StatusBar,
 )
@@ -65,6 +73,11 @@ class TradingApplication:
         on_add_symbol=None,
         on_remove_symbol=None,
         resolve_instruction=None,
+        on_refresh_positions=None,
+        on_account_changed=None,
+        on_ensure_symbol=None,
+        on_flatten_position=None,
+        on_get_quote=None,
     ):
         self.on_order = on_order
         self.trading_config = trading_config
@@ -78,6 +91,11 @@ class TradingApplication:
         self.on_add_symbol = on_add_symbol
         self.on_remove_symbol = on_remove_symbol
         self.resolve_instruction = resolve_instruction
+        self.on_refresh_positions = on_refresh_positions
+        self.on_account_changed = on_account_changed
+        self.on_ensure_symbol = on_ensure_symbol
+        self.on_flatten_position = on_flatten_position
+        self.on_get_quote = on_get_quote
 
         self.root = tk.Tk()
 
@@ -171,8 +189,14 @@ class TradingApplication:
             on_symbol_entered=
                 self._add_symbol,
 
+            on_account_changed=
+                self._account_changed,
+
             resolve_instruction=
                 self.resolve_instruction,
+
+            on_get_quote=
+                self.on_get_quote,
 
             trading_config=
                 self.trading_config,
@@ -216,12 +240,17 @@ class TradingApplication:
 
             on_disconnect=
                 self._disconnect,
+            
+            on_flatten_position=self._flatten_position,
 
             on_exit=
                 self.shutdown,
 
             on_about=
                 self._about,
+
+            on_refresh=
+                self._refresh_positions,
         )
 
 
@@ -261,9 +290,9 @@ class TradingApplication:
         # Load most recent cached quote
         #
 
-        if self.get_quote:
+        if self.on_get_quote:
 
-            quote = self.get_quote(
+            quote = self.on_get_quote(
                 symbol
             )
             print(
@@ -367,6 +396,15 @@ class TradingApplication:
             self.on_disconnect()
 
 
+    def _flatten_position(self):
+
+        symbol = self.quote_table.get_selected_symbol()
+
+        if not symbol:
+            return
+
+        self.on_flatten_position(symbol)
+
     def _about(self):
 
         messagebox.showinfo(
@@ -374,6 +412,28 @@ class TradingApplication:
             "Schwab Trading Terminal",
         )
 
+    def _refresh_positions(self):
+        if self.on_refresh_positions:
+            self.on_refresh_positions()
+
+    def _account_changed(
+        self,
+        account_hash: str | None,
+    ):
+        """
+        Notify the runtime that the selected account changed.
+
+        The runtime owns the authoritative selected-account state
+        and is responsible for refreshing the displayed positions.
+        """
+
+        if (
+            self.on_account_changed
+            and account_hash is not None
+        ):
+            self.on_account_changed(
+                account_hash
+            )
 
     # -------------------------------------------------------------
     # Public API used by runtime
@@ -399,6 +459,18 @@ class TradingApplication:
         ):
             self.trade_instruction_panel.set_quote(
                 quote
+            )
+
+    def update_positions(self, quantities):
+
+        if not quantities:
+            return
+        
+        for symbol, quantity in quantities.items():
+            self.on_ensure_symbol(symbol)
+            self.quote_table.update_position(
+                symbol,
+                quantity,
             )
 
     def set_connection_status(

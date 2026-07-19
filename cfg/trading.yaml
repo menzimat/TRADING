@@ -200,6 +200,7 @@ templates:
     price:
 
       basis: market
+      offset: market
 
     tif: DAY
 
@@ -220,6 +221,7 @@ templates:
     price:
 
       basis: market
+      offset: market
 
     tif: DAY
 
