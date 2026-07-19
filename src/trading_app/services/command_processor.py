@@ -492,7 +492,7 @@ class CommandProcessor:
     # Position commands
     # ==========================================================
 
-    async def flatten_position(
+    async def old_flatten_position(
         self,
         payload,
     ):
@@ -547,6 +547,9 @@ class CommandProcessor:
             side=side,
             order_type=OrderType.MARKET,
             tif=TimeInForce.DAY,
+            review_before_send=payload.review_before_send,
+            extended_hours=payload.extended_hours,
+            allow_partial_fill=payload.allow_partial_fill
         )
 
         await self.submit_market_order(
@@ -554,7 +557,53 @@ class CommandProcessor:
             side.name,
         )
 
+    async def flatten_position(
+            self,
+            payload,
+        ):
+        request = payload
+        print(f"FLATTEN_POSITION: {request}")
 
+        #
+        # Use ONE position lookup only.
+        #
+        position = self.state_engine.get_position(symbol=request.symbol,account_hash=request.account_hash,)
+
+        if position is None:
+
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="FLATTEN_REJECTED",
+                    payload="No position",
+                )
+            )
+            return
+
+        #
+        # Determine actual side from the live position.
+        #
+        request.side = (
+            Side.SELL
+            if position.quantity > 0
+            else Side.BUY
+        )
+
+        request.quantity = abs(position.quantity)
+
+        if request.quantity <= 0:
+
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="FLATTEN_REJECTED",
+                    payload="Position quantity is zero",
+                )
+            )
+            return
+
+        await self.submit_market_order(
+            request,
+            request.side.name,
+        )
 
     async def panic(
         self,

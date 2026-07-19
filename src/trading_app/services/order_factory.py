@@ -19,9 +19,8 @@ Non-responsibilities:
 
 from __future__ import annotations
 
-
 from trading_app.models.order import (
-    OrderRequest,
+    OrderRequest, OrderType, Side, TimeInForce
 )
 
 from trading_app.models.trade_instruction import (
@@ -112,5 +111,53 @@ class OrderFactory:
             ),
         )
 
+
+        return request
+    
+    def create_flatten_request(self, account, symbol, position) -> OrderRequest:
+        if not symbol:
+            raise ValueError(
+                "No symbol provided for FLATTEN request."
+            )
+
+
+        request = OrderRequest(
+
+            #
+            # Instrument
+            #
+
+            symbol=symbol,
+
+            quantity=position,
+
+            account_hash=account,
+
+            #
+            # Order fields
+            #
+
+            side=Side.SELL,
+
+            order_type=OrderType.MARKET,
+
+            tif=TimeInForce.DAY,
+
+            #
+            # Price fields
+            #
+
+            limit_price=( None ),
+
+            #
+            # Runtime options
+            #
+
+            review_before_send=( False ),
+
+            extended_hours=( True ),
+
+            allow_partial_fill=( True ),
+        )
 
         return request

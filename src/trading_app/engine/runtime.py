@@ -33,8 +33,8 @@ from trading_app.bus import (
     CommandType,
     SystemEvent,
 )
-from trading_app.models.trade_instruction import TradeInstruction
-from trading_app.models.order import OrderRequest, OrderType, Side, TimeInForce
+
+from trading_app.models.order import Side
 from trading_app.trading_config import QuantityType
 
 class Runtime:
@@ -160,14 +160,10 @@ class Runtime:
 
         if not symbol:
             return False
-        
-        request = OrderRequest(
-                    symbol=symbol,
-                    account_hash=self.selected_account_hash,
-                    quantity=self.state_engine.get_position(symbol,self.selected_account_hash),
-                    side=Side.SELL,
-                    order_type=OrderType.MARKET,
-                    tif=TimeInForce.DAY,
+        request = self.order_factory.create_flatten_request(
+            account=self.selected_account_hash,
+            symbol=symbol,
+            position=self.state_engine.get_position(symbol,self.selected_account_hash),
         )
 
         event = CommandEvent(command=CommandType.FLATTEN, payload=request)
