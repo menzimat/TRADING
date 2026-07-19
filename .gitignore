@@ -13,3 +13,5 @@ tokens/
 trading_app.egg-info/
 .venv/
 Schwab-py_Hotkey_Sell_Prompt
+*.log
+*.zip
