@@ -77,7 +77,11 @@ class OrderStatus(Enum):
 # Main Order
 # ---------------------------------------------------------
 
+@dataclass(slots=True)
+class OrderIntent:
 
+    template: dict
+    
 @dataclass(slots=True)
 class OrderRequest:
     """

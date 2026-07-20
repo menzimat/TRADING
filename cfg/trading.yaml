@@ -72,6 +72,96 @@ price_offsets:
 
 hotkeys:
 
+  shift+1:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 100
+      price:
+        offset: aggressive
+
+  shift+2:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 200
+      price:
+        offset: aggressive
+
+  shift+3:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 300
+      price:
+        offset: aggressive
+
+  shift+4:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 400
+      price:
+        offset: aggressive
+
+  shift+5:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 500
+      price:
+        offset: aggressive
+
+  shift+6:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 600
+      price:
+        offset: aggressive
+
+  shift+7:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 700
+      price:
+        offset: aggressive
+
+  shift+8:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 800
+      price:
+        offset: aggressive
+
+  shift+9:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 900
+      price:
+        offset: aggressive
+
+  shift+0:
+    template: buy_limit
+    overrides:
+      quantity:
+        type: fixed
+        value: 1000
+      price:
+        offset: aggressive
+
   ctrl+b: buy_limit
 
   ctrl+s: sell_limit
@@ -82,7 +172,7 @@ hotkeys:
 
   ctrl+c: sell_limit_qtr
 
-  shift+f: flatten
+  ctrl+f: flatten
 
   esc: cancel_all
 

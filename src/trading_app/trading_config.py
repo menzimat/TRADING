@@ -26,7 +26,7 @@ from trading_app.models.order import (
 )
 
 from enum import Enum
-
+from copy import deepcopy
 
 # ---------------------------------------------------------
 # Trading configuration enums
@@ -154,6 +154,31 @@ class TradingConfig:
     price_offsets: dict[str, OffsetDefinition]
     hotkeys: dict[str, str]
     templates: dict[str, TemplateDefinition]
+
+    def get_hotkey(self, key: str) -> dict | None:
+        return self.config["hotkeys"].get(key)
+
+    def get_template(self, name: str) -> dict | None:
+        return self.config["templates"].get(name)
+
+
+    def merge_dict(self, base: dict, overrides: dict) -> dict:
+
+        result = deepcopy(base)
+
+        for key, value in overrides.items():
+
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                result[key] = self.merge_dict(result[key], value)
+
+            else:
+                result[key] = deepcopy(value)
+
+        return result
 
     @classmethod
     def load(

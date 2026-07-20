@@ -8,10 +8,29 @@ from pynput import keyboard
 from trading_app.bus import CommandEvent, CommandType
 from trading_app.trading_config import TradingConfig
 from trading_app.services.trade_instruction_factory import TradeInstructionFactory
+from copy import deepcopy
 
 
 class HotkeyManager:
     """YAML-driven hotkey manager for the local trading app."""
+
+
+
+    def _deep_merge(self, base: dict, overrides: dict) -> dict:
+        result = deepcopy(base)
+
+        for key, value in overrides.items():
+
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                result[key] = self._deep_merge(result[key], value)
+            else:
+                result[key] = deepcopy(value)
+
+        return result
 
     def __init__(
         self,
@@ -44,7 +63,7 @@ class HotkeyManager:
         for combo, target in self.trading_config.hotkeys.items():
             normalized = self._normalize_combo(combo)
             if normalized:
-                self._bindings[normalized] = self.make_handler(target)
+                self._bindings[normalized] = self.make_handler(combo)
 
     @staticmethod
     def _normalize_combo(combo: str) -> str:
@@ -75,13 +94,77 @@ class HotkeyManager:
 
         return "+".join(normalized)
 
-    def make_handler(self, template_name: str):
+    def old_make_handler(self, template_name: str):
         def handler():
             self.enqueue_action(template_name)
         return handler
+    
+    def make_handler(self, combo):
+        def handler():
+            print(f"HOTKEY FIRED: {combo}")
+            self.enqueue_action(combo)
+        return handler
 
-    def resolve_hotkey_target(self, combo: str) -> Optional[str]:
+    def old_resolve_hotkey_target(self, combo: str) -> Optional[str]:
         return self.trading_config.hotkeys.get(combo)
+
+
+    def resolve_hotkey_target(self, combo: str):
+
+        target = self.trading_config.hotkeys.get(combo)
+
+        if target is None:
+            return None
+
+        #
+        # OLD STYLE
+        #
+        # ctrl+b: buy_limit
+        #
+        if isinstance(target, str):
+
+            template = self.trading_config.templates.get(target)
+
+            if template is None:
+                return None
+
+            return {
+                "template_name": target,
+                "template": deepcopy(template),
+            }
+        elif "action" in target:
+            return {
+                "action": target["action"]
+            }
+        #
+        # NEW STYLE
+        #
+        # shift+2:
+        #   template: buy_limit
+        #   overrides: ...
+        #
+        elif isinstance(target, dict):
+
+            template_name = target["template"]
+
+            template = self.trading_config.templates.get(template_name)
+
+            if template is None:
+                return None
+
+            template = deepcopy(template)
+
+            overrides = target.get("overrides")
+
+            if overrides:
+                template = self._deep_merge(template, overrides)
+
+            return {
+                "template_name": template_name,
+                "template": template,
+            }
+
+        return None
 
     def start(self):
         threading.Thread(target=self.start_async_loop, daemon=True).start()
@@ -98,7 +181,7 @@ class HotkeyManager:
         with keyboard.GlobalHotKeys(self._bindings) as listener:
             listener.join()
 
-    def enqueue_action(self, template_name: str):
+    def old_enqueue_action(self, template_name: str):
         if self.loop is None:
             return
 
@@ -107,7 +190,17 @@ class HotkeyManager:
             self.loop,
         )
 
-    async def worker(self):
+    def enqueue_action(self, combo):
+
+        if self.loop is None:
+            return
+
+        asyncio.run_coroutine_threadsafe(
+            self.queue.put(combo),
+            self.loop,
+        )
+
+    async def old_worker(self):
         while True:
             template_name = await self.queue.get()
             try:
@@ -117,7 +210,18 @@ class HotkeyManager:
             finally:
                 self.queue.task_done()
 
-    async def handle_template(self, template_name: str):
+    async def worker(self):
+        while True:
+            combo = await self.queue.get()
+            print(f"QUEUE RECEIVED: {combo}")
+            try:
+                await self.handle_hotkey(combo)
+            except Exception as exc:
+                print(exc)
+            finally:
+                self.queue.task_done()
+
+    async def old_handle_template(self, template_name: str):
         if self.runtime is None:
             print(f"Hotkey target {template_name} ignored: runtime not attached")
             return
@@ -159,6 +263,84 @@ class HotkeyManager:
         )
 
         self.runtime.submit_instruction(instruction)
+
+
+    async def handle_hotkey(self, combo):
+
+        resolved = self.resolve_hotkey_target(combo)
+        print("RESOLVED:", resolved)
+        if resolved is None:
+            return
+        
+        if "action" in resolved:
+            self._handle_action(resolved["action"])
+            return
+        
+        template_name = resolved["template_name"]
+
+        template = resolved["template"]
+
+        #
+        # Everything below is almost identical to your
+        # current implementation.
+        #
+
+        if self.runtime is None:
+            return
+
+        if not self.runtime.running:
+            return
+
+        symbol = None
+
+        if self.runtime.gui is not None:
+            symbol = self.runtime.gui.get_selected_symbol()
+
+        if not symbol:
+            return
+
+        if template.action is not None:
+
+            self._handle_action(template.action)
+
+            return
+
+        #
+        # NEW
+        #
+        # pass resolved template
+        #
+
+        if (
+            self.runtime.gui is not None
+            and hasattr(self.runtime.gui, "trade_instruction_panel")
+        ):
+
+            panel = self.runtime.gui.trade_instruction_panel
+
+            instruction = panel.apply_template_to_panel(
+                template_name,
+                quote=self.runtime.state_engine.get_quote(symbol),
+                template_override=template,
+            )
+
+            panel._submit(instruction.side)
+
+            return
+
+        instruction = self.trade_instruction_factory.create(
+
+            template_name=template_name,
+
+            symbol=symbol,
+
+            quote=self.runtime.state_engine.get_quote(symbol),
+
+            template_override=template,
+        )
+
+        self.runtime.submit_instruction(instruction)
+        
 
     def _handle_action(self, action: str):
         if self.runtime is None:

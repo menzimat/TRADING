@@ -60,6 +60,7 @@ class TradeInstructionFactory:
         template_name: str,
         symbol: str,
         quote=None,
+        template_override=None,
     ) -> TradeInstruction:
         """
         Build a TradeInstruction.
@@ -86,9 +87,10 @@ class TradeInstructionFactory:
 
         defaults = self.config.defaults
 
-        template = self.config.templates[
-            template_name
-        ]
+        if template_override is None:
+            template = self.config.templates[template_name]
+        else:
+            template = template_override
 
         #
         # Resolve named offset.
