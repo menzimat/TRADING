@@ -16,6 +16,7 @@ Non-responsibilities:
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -26,14 +27,6 @@ from trading_app.gui.application_menus import (
 
 from trading_app.gui.table_renderer import (
     QuoteTable,
-)
-
-from trading_app.engine.runtime import (
-    Runtime
-)
-
-from trading_app.engine.state_engine import (
-    QuoteState
 )
 
 from trading_app.gui.status_bar import (
@@ -77,6 +70,7 @@ class TradingApplication:
         on_account_changed=None,
         on_ensure_symbol=None,
         on_flatten_position=None,
+        on_simulation_changed=None,
         on_get_quote=None,
     ):
         self.on_order = on_order
@@ -95,6 +89,7 @@ class TradingApplication:
         self.on_account_changed = on_account_changed
         self.on_ensure_symbol = on_ensure_symbol
         self.on_flatten_position = on_flatten_position
+        self.on_simulation_changed = on_simulation_changed
         self.on_get_quote = on_get_quote
 
         self.root = tk.Tk()
@@ -106,7 +101,7 @@ class TradingApplication:
         self.root.geometry(
             "1400x800"
         )
-
+        self.logger = logging.getLogger(__name__)
 
         self._build_layout()
 
@@ -220,7 +215,7 @@ class TradingApplication:
         #
 
         self.status_bar = StatusBar(
-            self.root
+            self.root, on_simulation_changed=self._simulation_changed
         )
 
         self.status_bar.widget().grid(
@@ -257,6 +252,42 @@ class TradingApplication:
     # -------------------------------------------------------------
     # GUI callbacks
     # -------------------------------------------------------------
+
+    def _update_execution_indicator(self, enabled):
+        if enabled:
+            self.logger.info("***** SIMULATION MODE ENABLED *****\n"
+                "Orders will NOT be transmitted to Schwab.")
+
+            self.status_bar.set_execution_mode(enabled)
+            print(f"SIMULATION ENABLED: {enabled}")
+        else:
+            print(f"LIVE TRADING ENABLED: {enabled}")
+            self.logger.info(f"***** LIVE TRADING ENABLED {enabled}*****")
+            if not messagebox.askyesno(
+                "Enable Live Trading",
+                "Simulation Mode will be disabled.\n\n"
+                "REAL orders will be sent to Schwab.\n\n"
+                "Continue?"
+            ):
+                print(f"LIVE TRADING REJECTED ?: {enabled}")
+                self.logger.info(f"***** LIVE TRADING REJECTED ? {enabled}*****")
+                self.status_bar.set_execution_mode(tk.BooleanVar(value=True))
+                return
+
+            print(f"LIVE TRADING ENABLED2: {enabled}")
+            self.logger.info("***** LIVE TRADING ENABLED2 *****")
+            self.status_bar.set_execution_mode(enabled)
+            
+
+    def _simulation_changed(self, enabled):
+
+        print(f"_simulation_changed: {enabled}")
+        if self.on_simulation_changed:
+            self.on_simulation_changed(enabled)
+
+        self._update_execution_indicator(enabled)
+            
+        
 
     def set_accounts(
         self,

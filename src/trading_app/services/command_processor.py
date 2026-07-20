@@ -37,7 +37,34 @@ from trading_app.models.order import Side
 
 logger = logging.getLogger(__name__)
 
+class SimulationExecutor:
 
+    def __init__(self):
+
+        self.next_id = 1
+
+    def submit(
+        self,
+        account,
+        order_spec,
+        source
+    ):
+
+        order_id = f"SIM-{self.next_id:06d}"
+
+        self.next_id += 1
+
+        logger.info(
+            "SIMULATION ORDER\n"
+            "ID=%s\n"
+            "Source=%s\n"
+            "%s",
+            order_id,
+            source,
+            order_spec
+        )
+
+        return order_id
 
 class CommandProcessor:
     """
@@ -61,6 +88,8 @@ class CommandProcessor:
             state_engine
         )
 
+        self.simulator = SimulationExecutor()
+        
         self.account_provider = account_provider
 
         self.running = True
@@ -345,10 +374,13 @@ class CommandProcessor:
 
         request.quantity = capped_qty
 
+
+
     async def place_order(
         self,
         payload: dict,
         request=None,
+        source="GUI"
     ):
 
         """
@@ -397,6 +429,16 @@ class CommandProcessor:
                 "Schwab client does not expose an account_hash for order placement."
             )
 
+
+        if self.runtime.simulation_mode:
+            sim_id = self.simulator.submit(
+                account_hash,
+                payload,
+                source
+            )
+
+            return sim_id
+    
         try:
             #This is the Schwab Call to the exposed place_order() method, 
             #not the local async self.place_order() method.

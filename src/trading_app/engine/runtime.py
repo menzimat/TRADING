@@ -87,6 +87,7 @@ class Runtime:
 
         self.running = False
 
+        self.simulation_mode = None
 
         #
         # Async -> GUI bridge
@@ -97,6 +98,20 @@ class Runtime:
         self.accounts = []
         self.selected_account_hash = None
 
+
+    def set_simulation_mode(self, enabled):
+        self.simulation_mode = enabled
+
+    @property
+    def live_trading(self):
+
+        return not self.simulation_mode
+    
+    def on_simulation_changed(self, enabled ):
+        print(f"RUNTIME on_simulation_changed: {enabled}")
+        self.set_simulation_mode(enabled)
+
+        
 
     # ==========================================================
     # GUI Attachment
