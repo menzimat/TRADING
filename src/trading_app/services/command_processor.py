@@ -19,6 +19,7 @@ Non-responsibilities:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import inspect
 import logging
 from typing import Any
@@ -32,7 +33,7 @@ from trading_app.bus import (
     CommandType,
     SystemEvent,
 )
-from trading_app.models.order import OrderRequest, OrderType, Side, TimeInForce
+from trading_app.models.order import Side
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,11 @@ class CommandProcessor:
                         event.payload
                     )
 
+                case CommandType.CANCEL_ALL:
+
+                    await self.cancel_all_orders(
+                        event.payload
+                    )
 
                 case CommandType.PANIC:
 
@@ -486,76 +492,84 @@ class CommandProcessor:
                 )
             )
 
+    async def cancel_all_orders(self, payload):
 
+        if payload is None:
+            raise ValueError(
+                "CANCEL_ALL requires an account_hash."
+            )
+        
+        account_hash = None
 
+        if payload is not None:
+            account_hash = payload.get("account_hash")
+
+        if account_hash is None and self.account_provider:
+            account_hash = self.account_provider()
+
+        if account_hash is None:
+            raise ValueError(
+                "No account selected."
+            )
+
+        #
+        # Get all working orders
+        #
+        now = datetime.now(timezone.utc)
+        twelve_hours_ago = now - timedelta(hours=12)
+
+        response = await self.client.get_orders_for_account(
+            account_hash=account_hash, max_results=50, from_entered_datetime=twelve_hours_ago, to_entered_datetime=now, )
+
+        orders = response.json()
+        #
+        # Cancel each working order
+        #
+        WORKING_STATES = {
+            "ACCEPTED",
+            "QUEUED",
+            "WORKING",
+            "PARTIALLY_FILLED",
+            "PENDING_ACTIVATION",
+            "AWAITING_PARENT_ORDER",
+            "AWAITING_CONDITION",
+            "AWAITING_STOP_CONDITION"
+        }
+        orders = [o for o in orders if o["status"] in WORKING_STATES]
+        for order in orders:
+            order_id = order["orderId"]
+            status = order["status"]
+            
+            print(f"Cancelling order {order_id} ({status})")
+            await self.client.cancel_order(order["orderId"], account_hash)
+
+        await self.bus.publish_system(
+            SystemEvent(
+                name="ALL_ORDERS_CANCELLED",
+                payload=account_hash,
+            )
+        )
+
+        all_statuses = ["ACCEPTED",
+            "QUEUED",
+            "WORKING",
+            "PARTIALLY_FILLED",
+            "PENDING_ACTIVATION",
+            "PENDING_CANCEL",
+            "PENDING_REPLACE",
+            "PENDING_RECALL",
+            "PENDING_ACKNOWLEDGEMENT",
+            "AWAITING_PARENT_ORDER",
+            "AWAITING_CONDITION",
+            "AWAITING_STOP_CONDITION",
+            "AWAITING_MANUAL_REVIEW",
+            "AWAITING_UR_OUT",
+            "AWAITING_RELEASE_TIME",
+            "NEW"]
+        
     # ==========================================================
     # Position commands
     # ==========================================================
-
-    async def old_flatten_position(
-        self,
-        payload,
-    ):
-
-        print(f"FLATTEN_POSITION: {payload}")
-
-        symbol = payload.symbol.upper()
-
-        #
-        # Use ONE position lookup only.
-        #
-        position = self.state_engine.get_position(symbol=symbol,account_hash=payload.account_hash,)
-
-        if position is None:
-
-            await self.bus.publish_system(
-                SystemEvent(
-                    name="FLATTEN_REJECTED",
-                    payload="No position",
-                )
-            )
-            return
-
-        #
-        # Determine actual side from the live position.
-        #
-        side = (
-            Side.SELL
-            if position.quantity > 0
-            else Side.BUY
-        )
-
-        quantity = abs(position.quantity)
-
-        if quantity <= 0:
-
-            await self.bus.publish_system(
-                SystemEvent(
-                    name="FLATTEN_REJECTED",
-                    payload="Position quantity is zero",
-                )
-            )
-            return
-
-        request = OrderRequest(
-            symbol=symbol,
-            account_hash=(
-                payload.account_hash
-                or position.account_hash
-            ),
-            quantity=quantity,
-            side=side,
-            order_type=OrderType.MARKET,
-            tif=TimeInForce.DAY,
-            review_before_send=payload.review_before_send,
-            extended_hours=payload.extended_hours,
-            allow_partial_fill=payload.allow_partial_fill
-        )
-
-        await self.submit_market_order(
-            request,
-            side.name,
-        )
 
     async def flatten_position(
             self,

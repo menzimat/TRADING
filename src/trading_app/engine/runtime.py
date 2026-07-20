@@ -187,34 +187,6 @@ class Runtime:
         )
         return True
 
-    def old_set_selected_account(
-        self,
-        account_hash: str | None,
-    ) -> bool:
-        """
-        Update the currently selected account and refresh the
-        quote table positions for that account.
-        """
-
-        self.selected_account_hash = account_hash
-
-        if (
-            account_hash is None
-            or self.gui is None
-        ):
-            return False
-
-        quantities = (
-            self.state_engine.get_account_position_quantities(
-                account_hash
-            )
-        )
-
-        self.gui.quote_table.set_positions(
-            quantities
-        )
-
-        return True
 
     def set_selected_account(self, account_hash):
 
@@ -682,7 +654,24 @@ class Runtime:
 
         return True
 
+    def cancel_all_orders(self) -> bool:
 
+        if not self.running or self.loop is None:
+            return False
+
+        event = CommandEvent(
+            command=CommandType.CANCEL_ALL,
+            payload={
+                "account_hash": self.selected_account_hash,
+            },
+        )
+
+        asyncio.run_coroutine_threadsafe(
+            self.bus.publish_command(event),
+            self.loop,
+        )
+
+        return True
 
     # ==========================================================
     # Shutdown

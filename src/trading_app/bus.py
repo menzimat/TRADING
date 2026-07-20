@@ -69,6 +69,8 @@ class CommandType(Enum):
 
     CANCEL = auto()
 
+    CANCEL_ALL = auto()
+
     FLATTEN = auto()
 
     PANIC = auto()

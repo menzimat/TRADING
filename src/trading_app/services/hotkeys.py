@@ -165,10 +165,13 @@ class HotkeyManager:
             return
 
         command = None
+        payload=None
         if action == "FLATTEN":
             command = CommandType.FLATTEN
         elif action == "CANCEL_ALL":
-            command = CommandType.CANCEL
+            command = CommandType.CANCEL_ALL
+            self.runtime.cancel_all_orders()
+            return
         elif action == "PANIC_EXIT":
             command = CommandType.PANIC
         elif action == "REFRESH_QUOTES":

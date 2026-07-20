@@ -4,6 +4,27 @@
 "token_path": "./tokens/token.json",
 "tickers_file": "./cfg/tickers.txt",
 "trading_config": "./cfg/trading.yaml",
-"keepass_config": "./cfg/config.json"
+"keepass_config": "./cfg/config.json",
+"logging": {
+        "root_level": "INFO",
+
+        "modules": {
+            "trading_app.engines": "INFO",
+            "trading_app.engine.runtime": "INFO",
+            "trading_app.services.command_processor": "DEBUG",
+            "trading_app.engine.state_engine": "WARNING",
+            "trading_app.streamer": "INFO",
+            "trading_app.gui": "WARNING"
+        },
+
+        "console": true,
+        "file": true,
+        "filename": "logs/trading.log",
+
+        "rotation": {
+            "max_mb": 10,
+            "backups": 5
+        }
+    }
 }
 

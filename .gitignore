@@ -15,3 +15,4 @@ trading_app.egg-info/
 Schwab-py_Hotkey_Sell_Prompt
 *.log
 *.zip
+logs/

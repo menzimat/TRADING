@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-
+from typing import Any
 
 DEFAULTS = {
 
@@ -22,13 +22,25 @@ DEFAULTS = {
     "tickers_file": "./cfg/tickers.txt",
     "trading_config": "./cfg/trading.yaml",
     "keepass_config": "./cfg/config.json",
+    "logging": {
+        "root_level": "INFO",
+        "modules": {},
+        "console": True,
+        "file": True,
+        "filename": "logs/trading.log",
+        "rotation": {
+            "max_mb": 10,
+            "backups": 5,
+        },
+    },
     "quote_refresh_ms": 20,
     "market_queue_size": 1000,
     "command_queue_size": 200,
     "review_orders": True,
     "default_buy_offset": 0.10,
     "default_sell_offset": 0.10,
-    "default_stop_offset": 0.40
+    "default_stop_offset": 0.40,
+
 
 }
 
@@ -49,6 +61,8 @@ class AppConfig:
     trading_config: str
 
     keepass_config: str
+
+    logging: dict[str, Any]
 
     quote_refresh_ms: int
 
