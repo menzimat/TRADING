@@ -62,6 +62,12 @@ class OffsetUnits(str, Enum):
 
     TICKS = "ticks"
 
+
+@dataclass(slots=True)
+class ResolvedPriceOffset:
+    value: float
+    units: str          # dollars | percent | ticks
+
 # ---------------------------------------------------------
 # Quantity
 # ---------------------------------------------------------
@@ -327,3 +333,125 @@ class TradingConfig:
             hotkeys=hotkeys,
             templates=templates,
         )
+    
+    def resolve_price_offset(self, offset):
+        """
+        Resolve a template price offset.
+
+        Input may be:
+
+            "default"
+            "aggressive"
+            "passive"
+            "market"
+
+        or
+
+            0.02
+            -0.05
+
+        Returns:
+
+            ResolvedPriceOffset(
+                value=float,
+                units=str
+            )
+        """
+
+        #
+        # Already numeric
+        #
+
+        if isinstance(offset, (int, float)):
+            return ResolvedPriceOffset(
+                value=float(offset),
+                units="dollars",
+            )
+
+        #
+        # Named offset
+        #
+
+        if not isinstance(offset, str):
+            raise TypeError(
+                f"Unsupported offset type: {type(offset)}"
+            )
+
+        try:
+            cfg = self.price_offsets[offset]
+        except KeyError:
+            raise ValueError(
+                f"Unknown price offset '{offset}'."
+            )
+
+        return ResolvedPriceOffset(
+            value=float(cfg.value),
+            units=cfg.units,
+        )
+    
+    def resolve_quantity_value(
+        self,
+        quantity_type,
+        value,
+    ):
+        """
+        Resolve template quantity.
+
+        Returns a numeric quantity.
+
+        fixed:
+            Shares
+
+        percent:
+            Percentage of current position
+
+        risk:
+            Dollar risk
+
+        """
+
+        #
+        # Already numeric
+        #
+
+        if isinstance(value, (int, float)):
+            return value
+
+        #
+        # Future symbolic quantities
+        #
+
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Unsupported quantity value: {value}"
+            )
+
+        #
+        # Example future aliases
+        #
+
+        aliases = {
+
+            "default":
+                self.defaults.quantity.value,
+
+            "small":
+                100,
+
+            "medium":
+                250,
+
+            "large":
+                500,
+
+        }
+
+        try:
+            return aliases[value]
+
+        except KeyError:
+
+            raise ValueError(
+                f"Unknown quantity alias '{value}'."
+            )
+    

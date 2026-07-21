@@ -48,6 +48,7 @@ from trading_app.services.price_calculator import (
                 PriceCalculator,
             )
 
+
 class TradeInstructionPanel:
     """
     Tkinter trade instruction editor.
@@ -112,6 +113,8 @@ class TradeInstructionPanel:
     # =========================================================
     # Variables
     # =========================================================
+
+    
 
     def load_instruction(
         self,
@@ -1080,6 +1083,44 @@ class TradeInstructionPanel:
             "schwab_payload": payload,
         }
 
+    def _apply_template_override(self, instruction, override,):
+        if override.side is not None:
+            instruction.side = override.side
+
+        if override.order_type is not None:
+            instruction.order_type = override.order_type
+
+        if override.tif is not None:
+            instruction.tif = override.tif
+
+        if override.quantity is not None:
+
+            if override.quantity.type is not None:
+                instruction.quantity_type = override.quantity.type
+
+            if override.quantity.value is not None:
+                resolved_quantity = self.trading_config.resolve_quantity_value(
+                    override.quantity.type,
+                    override.quantity.value,
+                )
+                instruction.quantity_value = resolved_quantity
+
+        if override.price is not None:
+
+            if override.price.basis is not None:
+                instruction.price_basis = override.price.basis
+
+            if override.price.offset is not None:
+                resolved = self.trading_config.resolve_price_offset(
+                override.price.offset
+            )
+
+            instruction.offset_value = resolved.value
+            instruction.offset_units = resolved.units
+            self.offset_units_var.set(resolved.units)
+
+        return
+
     def apply_template_to_panel(
         self,
         template_name: str,
@@ -1088,6 +1129,7 @@ class TradeInstructionPanel:
         side=None,
         quantity=None,
         review_before_send=None,
+        template_override=None
     ) -> TradeInstruction:
         if not self.trade_instruction_factory:
             raise RuntimeError("TradeInstructionFactory missing.")
@@ -1101,6 +1143,12 @@ class TradeInstructionPanel:
             quote=quote,
         )
 
+        if template_override is not None:
+            self._apply_template_override(
+                instruction,
+                template_override,
+            )
+
         if side is not None:
             instruction.side = side
 
@@ -1110,6 +1158,7 @@ class TradeInstructionPanel:
         if review_before_send is not None:
             instruction.review_before_send = review_before_send
 
+        
         if self.accounts:
             current_account = self.account_var.get()
             if current_account:
@@ -1120,6 +1169,8 @@ class TradeInstructionPanel:
                         break
                 else:
                     instruction.account_hash = None
+
+        
 
         self.instruction = instruction
         self._display_instruction()

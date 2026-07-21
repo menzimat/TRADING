@@ -111,6 +111,7 @@ class Engine:
                 client=self.client,
                 bus=self.bus,
                 state_engine=self.state_engine,
+                is_simulation_enabled=lambda: self.runtime.simulation_mode,
                 account_provider=self._get_selected_account_hash,
             )
         )

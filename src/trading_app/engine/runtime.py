@@ -87,7 +87,7 @@ class Runtime:
 
         self.running = False
 
-        self.simulation_mode = None
+        self.simulation_mode = True
 
         #
         # Async -> GUI bridge

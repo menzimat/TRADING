@@ -77,6 +77,7 @@ class CommandProcessor:
         client,
         bus: EventBus,
         state_engine,
+        is_simulation_enabled,
         account_provider=None,
     ):
 
@@ -84,12 +85,11 @@ class CommandProcessor:
 
         self.bus = bus
 
-        self.state_engine = (
-            state_engine
-        )
+        self.state_engine = ( state_engine )
+        self.is_simulation_enabled = is_simulation_enabled
 
         self.simulator = SimulationExecutor()
-        
+
         self.account_provider = account_provider
 
         self.running = True
@@ -430,7 +430,8 @@ class CommandProcessor:
             )
 
 
-        if self.runtime.simulation_mode:
+        if self.is_simulation_enabled():
+            print(f"CommandProcessor: SIMULATED TRADE")
             sim_id = self.simulator.submit(
                 account_hash,
                 payload,
@@ -438,7 +439,9 @@ class CommandProcessor:
             )
 
             return sim_id
-    
+                
+        print(f"CommandProcessor: LIVE TRADE")
+
         try:
             #This is the Schwab Call to the exposed place_order() method, 
             #not the local async self.place_order() method.
