@@ -111,6 +111,14 @@ class TradingApplication:
     # -------------------------------------------------------------
     # Construction
     # -------------------------------------------------------------
+    def debug_key(self, event):
+        print(
+            f"keysym={event.keysym!r} "
+            f"keycode={event.keycode} "
+            f"char={event.char!r} "
+            f"state=0x{event.state:04x}"
+        )
+
 
     def _build_layout(self):
 
@@ -128,6 +136,8 @@ class TradingApplication:
         main = ttk.Frame(
             self.root
         )
+
+#       self.root.bind_all("<KeyPress>", self.debug_key)
 
         main.grid(
             row=0,
