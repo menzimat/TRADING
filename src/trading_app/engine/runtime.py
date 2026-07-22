@@ -87,6 +87,8 @@ class Runtime:
 
         self.running = False
 
+        self.hotkeys_enabled = False
+
         self.simulation_mode = True
 
         #
@@ -240,7 +242,7 @@ class Runtime:
         )
 
         self.thread.start()
-
+        self.hotkeys_enabled = True
         #
         # Begin Tk polling
         #

@@ -114,7 +114,8 @@ class TradeInstructionPanel:
     # Variables
     # =========================================================
 
-    
+    def get_review_setting(self):
+        return bool(self.review_var.get())
 
     def load_instruction(
         self,
@@ -1082,42 +1083,68 @@ class TradeInstructionPanel:
             "account_hash": request.account_hash,
             "schwab_payload": payload,
         }
+    
+
+    def enum_value(self, value, enum_cls):
+        if isinstance(value, enum_cls):
+            return value
+
+        if isinstance(value, str):
+            return enum_cls(value.lower())
+
+        raise TypeError(
+            f"Cannot convert {value!r} to {enum_cls.__name__}"
+        )
+
 
     def _apply_template_override(self, instruction, override,):
-        if override.side is not None:
-            instruction.side = override.side
-
-        if override.order_type is not None:
-            instruction.order_type = override.order_type
-
-        if override.tif is not None:
-            instruction.tif = override.tif
-
-        if override.quantity is not None:
-
-            if override.quantity.type is not None:
-                instruction.quantity_type = override.quantity.type
-
-            if override.quantity.value is not None:
-                resolved_quantity = self.trading_config.resolve_quantity_value(
-                    override.quantity.type,
-                    override.quantity.value,
-                )
-                instruction.quantity_value = resolved_quantity
-
-        if override.price is not None:
-
-            if override.price.basis is not None:
-                instruction.price_basis = override.price.basis
-
-            if override.price.offset is not None:
-                resolved = self.trading_config.resolve_price_offset(
-                override.price.offset
+        if "side" in override:
+            instruction.side = self.enum_value(
+                override["side"],
+                Side
             )
 
-            instruction.offset_value = resolved.value
-            instruction.offset_units = resolved.units
-            self.offset_units_var.set(resolved.units)
+        if "order_type" in override:
+            instruction.order_type = self.enum_value(
+                override["order_type"],
+                OrderType
+            )
+
+        if "tif" in override:
+            instruction.tif = self.enum_value(
+                override["tif"],
+                TimeInForce
+            )
+
+        quantity = override.get("quantity")
+        if quantity:
+            quantity_type = quantity.get("type",instruction.quantity_type,)
+            instruction.quantity_type = self.enum_value(
+                quantity_type,
+                QuantityType
+            )
+
+            if "value" in quantity:
+                instruction.quantity_value = (
+                    self.trading_config.resolve_quantity_value(
+                    quantity_type,
+                    quantity["value"],)
+                )
+                
+        price = override.get("price")
+        if price:
+
+            if "basis" in price:
+                instruction.price_basis = price["basis"]
+
+            if "offset" in price:
+                offset = self.trading_config.resolve_price_offset(
+                    price["offset"]
+                )
+                instruction.offset_name = price["offset"]
+                instruction.offset_value = offset.value
+                instruction.offset_units = offset.units
+                self.offset_units_var.set(offset.units)
 
         return
 
@@ -1206,7 +1233,7 @@ class TradeInstructionPanel:
         )
 
         self.quantity_type_var.set(
-            i.quantity_type.value
+            i.quantity_type.value if hasattr(i.quantity_type, "value") else i.quantity_type
         )
 
         self.quantity_var.set(

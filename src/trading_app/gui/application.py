@@ -52,12 +52,25 @@ class TradingApplication:
         gui.run()
 
     """
+    _SHIFT_SYMBOLS = {
+        "!": "1",
+        "@": "2",
+        "#": "3",
+        "$": "4",
+        "%": "5",
+        "^": "6",
+        "&": "7",
+        "*": "8",
+        "(": "9",
+        ")": "0",
+    }
 
     def __init__(
         self,
         *,
         trading_config=None,
         trade_instruction_factory=None,
+        hotkey_manager=None,
         get_quote=None,
         on_order=None,
         on_instruction_submit=None,
@@ -75,6 +88,7 @@ class TradingApplication:
     ):
         self.on_order = on_order
         self.trading_config = trading_config
+        self.hotkey_manager = hotkey_manager
         self.trade_instruction_factory = (
             trade_instruction_factory
         )
@@ -111,6 +125,27 @@ class TradingApplication:
     # -------------------------------------------------------------
     # Construction
     # -------------------------------------------------------------
+
+    def _on_key_press(self, event):
+
+        #
+        # Ignore auto-repeat
+        #
+
+        if event.keysym in ("Shift_L", "Shift_R",
+                            "Control_L", "Control_R",
+                            "Alt_L", "Alt_R"):
+            return
+
+        if self.hotkey_manager is None:
+            return
+
+        self.hotkey_manager.handle_key_event(event)
+
+    def attach_hotkey_manager(self, manager):
+        self.hotkey_manager = manager
+        self.root.bind_all("<KeyPress>", self._on_key_press)
+
     def debug_key(self, event):
         print(
             f"keysym={event.keysym!r} "
@@ -209,6 +244,8 @@ class TradingApplication:
             trade_instruction_factory=
                 self.trade_instruction_factory,
         )
+
+        self.attach_hotkey_manager(self.hotkey_manager)
 
         self.trade_instruction_panel.widget().grid(
             row=0,

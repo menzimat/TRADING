@@ -163,6 +163,8 @@ class Engine:
 
             trade_instruction_factory= self.trade_instruction_factory,
 
+            hotkey_manager= self.hotkey_manager,
+
             get_quote=self.state_engine.get_quote,
 
             on_order= self.runtime.submit_order,
@@ -196,8 +198,8 @@ class Engine:
 
         
         #
-# Runtime receives final order factory
-#
+        # Runtime receives final order factory
+        #
 
         self.runtime.order_factory = (
             self.order_factory
@@ -226,7 +228,7 @@ class Engine:
     def start_backend(self):
         print("ENGINE: starting backend")
         self.runtime.start()
-        self.hotkey_manager.start()
+        self.gui.attach_hotkey_manager(self.hotkey_manager)
 
     def stop_backend(self):
 

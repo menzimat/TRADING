@@ -429,7 +429,7 @@ class OrderRequest:
             getattr(common.OrderStrategyType, "SINGLE")
         )
 
-        builder.set_session(common.Session.NORMAL)
+        builder.set_session(common.Session.SEAMLESS)
 
         if self.order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT):
             builder.set_price(str(self.limit_price))

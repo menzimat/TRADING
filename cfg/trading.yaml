@@ -172,9 +172,11 @@ hotkeys:
 
   ctrl+c: sell_limit_qtr
 
-  ctrl+f: flatten
-
-  esc: cancel_all
+  ctrl+f:
+    action: FLATTEN
+    
+  esc:
+    action: CANCEL_ALL
 
   ctrl+shift+q: panic
 
@@ -314,16 +316,6 @@ templates:
       offset: market
 
     tif: DAY
-
-
-  flatten:
-
-    action: FLATTEN
-
-
-  cancel_all:
-
-    action: CANCEL_ALL
 
 
   panic:
