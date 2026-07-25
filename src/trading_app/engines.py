@@ -75,7 +75,7 @@ class Engine:
 
         self.trading_cfg = TradingConfig.load(self.config.get_trading_config_path())
 
-        self.client = get_easy_client(
+        self.client, self.account_list = get_easy_client(
             str(self.config.keepass_config))
 
         #
@@ -143,6 +143,8 @@ class Engine:
             command_processor=self.command_processor,
             state_engine=self.state_engine,
             order_factory=self.order_factory,
+            account_list=self.account_list,
+            trading_config=self.trading_cfg,
         )
 
         self.hotkey_manager = HotkeyManager(

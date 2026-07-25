@@ -339,10 +339,11 @@ class TradingApplication:
     def set_accounts(
         self,
         accounts,
+        default_account_number,
     ):
         print("APPLICATION set_accounts", accounts)
         self.trade_instruction_panel.set_accounts(
-            accounts
+            accounts, default_account_number
         )
 
     def _symbol_selected(

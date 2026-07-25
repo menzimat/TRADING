@@ -26,7 +26,7 @@ defaults:
 
   side: BUY
 
-  account: default
+  account: brokerage_account   # brokerage_account | hsa_account
 
   quantity:
     type: fixed          # fixed | risk | percent (SELL percent uses cached position)
@@ -36,7 +36,7 @@ defaults:
 
   order_type: LIMIT
 
-  price_basis: ask       # ask | bid | market
+  price_basis: bid       # ask | bid | market
 
   price_offset: default
 
@@ -79,7 +79,7 @@ hotkeys:
         type: fixed
         value: 100
       price:
-        offset: aggressive
+        offset: default
 
   shift+2:
     template: buy_limit
@@ -88,7 +88,7 @@ hotkeys:
         type: fixed
         value: 200
       price:
-        offset: aggressive
+        offset: default
 
   shift+3:
     template: buy_limit
@@ -97,7 +97,7 @@ hotkeys:
         type: fixed
         value: 300
       price:
-        offset: aggressive
+        offset: default
 
   shift+4:
     template: buy_limit
@@ -106,7 +106,7 @@ hotkeys:
         type: fixed
         value: 400
       price:
-        offset: aggressive
+        offset: default
 
   shift+5:
     template: buy_limit
@@ -115,7 +115,7 @@ hotkeys:
         type: fixed
         value: 500
       price:
-        offset: aggressive
+        offset: default
 
   shift+6:
     template: buy_limit
@@ -124,7 +124,7 @@ hotkeys:
         type: fixed
         value: 600
       price:
-        offset: aggressive
+        offset: default
 
   shift+7:
     template: buy_limit
@@ -133,7 +133,7 @@ hotkeys:
         type: fixed
         value: 700
       price:
-        offset: aggressive
+        offset: default
 
   shift+8:
     template: buy_limit
@@ -142,7 +142,7 @@ hotkeys:
         type: fixed
         value: 800
       price:
-        offset: aggressive
+        offset: default
 
   shift+9:
     template: buy_limit
@@ -151,7 +151,7 @@ hotkeys:
         type: fixed
         value: 900
       price:
-        offset: aggressive
+        offset: default
 
   shift+0:
     template: buy_limit
@@ -160,17 +160,19 @@ hotkeys:
         type: fixed
         value: 1000
       price:
-        offset: aggressive
+        offset: default
 
   ctrl+b: buy_limit
 
   ctrl+s: sell_limit
 
-  ctrl+z: flatten
+  ctrl+z: sell_limit_all
 
   ctrl+x: sell_limit_half
 
   ctrl+c: sell_limit_qtr
+
+  ctrl+v: sell_limit_8th
 
   ctrl+f:
     action: FLATTEN
@@ -233,6 +235,27 @@ templates:
 
     tif: DAY
 
+  sell_limit_all:
+    template_name: "sell_limit"
+
+    template_display_name: "Sell Limit"
+
+    side: SELL
+
+    order_type: LIMIT
+
+    quantity:
+      type: percent
+      value: 100
+
+    price:
+
+      basis: bid
+
+      offset: default
+
+    tif: DAY    
+
   sell_limit_half:
     template_name: "sell_limit_half"
 
@@ -274,6 +297,27 @@ templates:
       offset: default
 
     tif: DAY
+
+  sell_limit_8th:
+      template_name: "sell_limit_8th"
+
+      template_display_name: "Sell Limit 8th"
+
+      side: SELL
+
+      order_type: LIMIT
+
+      quantity:
+        type: percent
+        value: 12.5
+
+      price:
+
+        basis: bid
+
+        offset: default
+
+      tif: DAY
 
 
   buy_market:

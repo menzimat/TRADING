@@ -290,7 +290,7 @@ class TradingConfig:
                         value["quantity"]["type"].lower()
                     ),
 
-                    value=int(
+                    value=float(
                         value["quantity"]["value"]
                     ),
                 ),

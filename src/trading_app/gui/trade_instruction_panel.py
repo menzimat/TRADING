@@ -827,8 +827,9 @@ class TradeInstructionPanel:
 
         return self.symbol_var.get()
 
-    def set_accounts(self, accounts):
+    def set_accounts(self, accounts, default_acct_number=None):
         print("PANEL set_accounts", accounts)
+        print("PANEL default_acct_number", default_acct_number)
         self.accounts = accounts
 
         values = [
@@ -838,21 +839,34 @@ class TradeInstructionPanel:
 
         self.account_box["values"] = values
         
+        default_acct_no = default_acct_number if default_acct_number is not None else self.accounts[0].account_number
         if values:
-            self.account_var.set(values[0])
-            if self.on_account_changed and self.accounts:
-                self.on_account_changed(
-                    self.accounts[0].account_hash
-                )
-
-            if self.instruction is not None:
-                self.instruction.account = values[0]
-                for account in accounts:
-                    if account.display_name == values[0]:
+            for account in accounts:
+                if account.account_number == default_acct_no:
+                    self.account_var.set(account.display_name)
+                    if self.on_account_changed and self.accounts:
+                        self.on_account_changed(
+                            account.account_hash
+                        )
+                    if self.instruction is not None:
+                        self.instruction.account = account.display_name
                         self.instruction.account_hash = account.account_hash
-                        break
-                else:
-                    self.instruction.account_hash = None
+                    break
+            else:
+                self.account_var.set(values[0])
+                if self.on_account_changed and self.accounts:
+                    self.on_account_changed(
+                        self.accounts[0].account_hash
+                    )
+
+                if self.instruction is not None:
+                    self.instruction.account = values[0]
+                    for account in accounts:
+                        if account.display_name == values[0]:
+                            self.instruction.account_hash = account.account_hash
+                            break
+                    else:
+                        self.instruction.account_hash = None
 
     def set_quote(
         self,
@@ -1022,7 +1036,6 @@ class TradeInstructionPanel:
             )
         )
 
-
         self._display_instruction()
 
 
@@ -1031,32 +1044,17 @@ class TradeInstructionPanel:
     # Display
     # =========================================================
 
-    def _account_selected(
-        self,
-        event=None,
-    ):
+    def _account_selected(self,event=None,):
         selected_hash = None
 
         if self.accounts:
-
             selected_name = self.account_var.get()
-
             for account in self.accounts:
-
                 if account.display_name == selected_name:
-
                     selected_hash = account.account_hash
-
                     if self.instruction:
-
-                        self.instruction.account = (
-                            account.display_name
-                        )
-
-                        self.instruction.account_hash = (
-                            account.account_hash
-                        )
-
+                        self.instruction.account = (account.display_name)
+                        self.instruction.account_hash = (account.account_hash)
                     break
 
         #
@@ -1064,10 +1062,7 @@ class TradeInstructionPanel:
         # account changed.
         #
         if self.on_account_changed:
-
-            self.on_account_changed(
-                selected_hash
-            )
+            self.on_account_changed(selected_hash)
 
     @staticmethod
     def _build_debug_payload(
@@ -1208,68 +1203,47 @@ class TradeInstructionPanel:
 
         i = self.instruction
 
-        self.account_var.set(
-            i.account
-        )
+        # Do NOT change the GUI Account selected by the USER when
+        #a new template is being applied.  Instead make the instruction account
+        #match what is in the GUI
+        #self.account_var.set(i.account)
+        i.account = self.account_var.get()
+
         #
         # Keep Runtime synchronized with the displayed account.
         #
         self._account_selected()
 
-        self.template_var.set(
-            i.template_name
-        )
+        self.template_var.set(i.template_name)
 
-        self.side_var.set(
-            i.side.name
-        )
+        self.side_var.set(i.side.name)
 
-        self.order_type_var.set(
-            i.order_type.name
-        )
+        self.order_type_var.set(i.order_type.name)
 
-        self.tif_var.set(
-            i.tif.name
-        )
+        self.tif_var.set(i.tif.name)
 
         self.quantity_type_var.set(
             i.quantity_type.value if hasattr(i.quantity_type, "value") else i.quantity_type
         )
 
-        self.quantity_var.set(
-            str(i.quantity)
-        )
+        self.quantity_var.set(str(i.quantity))
 
-        self.price_basis_var.set(
-            i.price_basis.value
-        )
+        self.price_basis_var.set(i.price_basis.value)
 
-        self.offset_units_var.set(
-            i.offset_units.value
-        )
+        self.offset_units_var.set(i.offset_units.value)
 
-        self.offset_value.set(
-            str(i.offset_value)
-        )
+        self.offset_value.set(str(i.offset_value))
 
         if i.manual_order_price is None:
             self.manual_price_var.set("")
         else:
-            self.manual_price_var.set(
-                str(i.manual_order_price)
-            )
+            self.manual_price_var.set(str(i.manual_order_price))
 
-        self.review_var.set(
-            i.review_before_send
-        )
+        self.review_var.set(i.review_before_send)
 
-        self.base_price_var.set(
-            self._fmt(i.base_price)
-        )
+        self.base_price_var.set(self._fmt(i.base_price))
 
-        self.order_price_var.set(
-            self._fmt(i.order_price)
-        )
+        self.order_price_var.set(self._fmt(i.order_price))
 
 
     # =========================================================
@@ -1298,7 +1272,7 @@ class TradeInstructionPanel:
 
         self.instruction.side = side
 
-        self.instruction.quantity_value = int(
+        self.instruction.quantity_value = float(
             self.quantity_var.get()
         )
 

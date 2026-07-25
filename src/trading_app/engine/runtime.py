@@ -52,6 +52,8 @@ class Runtime:
         command_processor,
         state_engine,
         order_factory=None,
+        account_list=None,
+        trading_config=None,
         trade_instruction_factory=None,
     ):
 
@@ -97,6 +99,14 @@ class Runtime:
 
         self.gui_queue = queue.Queue(maxsize=5000)
 
+        self.trading_config = trading_config
+
+        #self.account_list is a dictionary of the account numbers loaded from the
+        #secure database. { "brokerage_account": "12345678", "hsa_account": "87654321" }
+        #The DEFAULT account to use will be determines based on which account name is
+        #listed in the trading.yaml file default account entry: brokerage_account or hsa_account.
+
+        self.account_list = account_list
         self.accounts = []
         self.selected_account_hash = None
 
@@ -204,9 +214,16 @@ class Runtime:
         )
         return True
 
+    def set_default_account(self, accounts, acct_list, cfg):
+        if cfg.defaults.account in acct_list:
+            for acct in accounts:
+                if acct.account_number == acct_list[cfg.defaults.account]:
+                    print(f"Setting Default Account to: ", cfg.defaults.account, " : ", acct_list[cfg.defaults.account])
+                    self.set_selected_account(acct.account_hash)
+                    self.gui.set_accounts(self.accounts, acct.account_number)
+                    break
 
     def set_selected_account(self, account_hash):
-
         if (
             account_hash is None
             or self.gui is None
@@ -527,20 +544,23 @@ class Runtime:
 
                 self.accounts = list(event.payload or [])
 
-                self.gui.set_accounts(
-                    self.accounts
-                )
+                
 
                 if self.accounts:
-
-                    #
-                    # Default to the first account shown in
-                    # the GUI and immediately display only
-                    # that account's positions.
-                    #
-                    self.set_selected_account(
-                        self.accounts[0].account_hash
-                    )
+                    if self.account_list and self.trading_config:
+                        self.set_default_account(self.accounts, self.account_list, self.trading_config)
+                    else:
+                        #
+                        # Default to the first account shown in
+                        # the GUI and immediately display only
+                        # that account's positions.
+                        #
+                        self.set_selected_account(
+                            self.accounts[0].account_hash
+                        )
+                        self.gui.set_accounts(
+                            self.accounts, self.accounts[0].account_number
+                        )
 
                 return
             elif event.name == "PRICE_UPDATED":

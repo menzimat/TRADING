@@ -96,9 +96,7 @@ class TradeInstructionFactory:
         # Resolve named offset.
         #
 
-        offset = self.config.price_offsets[
-            template.price.offset
-        ]
+        offset = self.config.price_offsets[template.price.offset]
 
         instruction = TradeInstruction(
 
@@ -108,9 +106,7 @@ class TradeInstructionFactory:
 
             template_name=template_name,
 
-            template_display_name=self._display_name(
-                template_name
-            ),
+            template_display_name=self._display_name(template_name),
 
             #
             # Instrument
@@ -118,7 +114,12 @@ class TradeInstructionFactory:
 
             symbol=symbol.upper(),
 
-            account=defaults.account,
+            #
+            # User must set account prior to trade.
+            # Changing TEMPLATES shoudl not alter the selected account,
+            #so do not set it here for application in the GUI.
+            #
+            #account=defaults.account,
 
             #
             # Order
@@ -134,42 +135,27 @@ class TradeInstructionFactory:
             # Quantity
             #
 
-            quantity_type=(
-                template.quantity.type
-            ),
+            quantity_type=(template.quantity.type),
 
-            quantity_value=(
-                template.quantity.value
-            ),
+            quantity_value=(template.quantity.value),
 
             #
             # Pricing
             #
 
-            price_basis=(
-                template.price.basis
-            ),
+            price_basis=(template.price.basis),
 
-            offset_name=(
-                template.price.offset
-            ),
+            offset_name=(template.price.offset),
 
-            offset_value=(
-                offset.value
-            ),
+            offset_value=(offset.value),
 
-            offset_units=(
-                offset.units
-            ),
+            offset_units=(offset.units),
 
             #
             # Runtime options
             #
-
             review_before_send=True,
-
-            extended_hours=False,
-
+            extended_hours=True,
             allow_partial_fill=True,
         )
 
@@ -185,36 +171,20 @@ class TradeInstructionFactory:
         #
 
         if quote is not None:
-
             if isinstance(quote, dict):
-
-                instruction.bid = quote.get(
-                    "bid"
-                )
-
-                instruction.ask = quote.get(
-                    "ask"
-                )
-
-                instruction.last = quote.get(
-                    "last"
-                )
-
+                instruction.bid = quote.get("bid")
+                instruction.ask = quote.get("ask")
+                instruction.last = quote.get("last")
             else:
-
                 instruction.bid = quote.bid
-
                 instruction.ask = quote.ask
-
                 instruction.last = quote.last
 
         #
         # Initial price calculation.
         #
 
-        PriceCalculator.apply(
-            instruction
-        )
+        PriceCalculator.apply(instruction)
 
         return instruction
 
@@ -225,9 +195,7 @@ class TradeInstructionFactory:
     #
 
     @staticmethod
-    def _display_name(
-        template_name: str,
-    ) -> str:
+    def _display_name(template_name: str,) -> str:
         """
         Convert
 
@@ -241,8 +209,5 @@ class TradeInstructionFactory:
         to trading.yaml.
         """
 
-        return (
-            template_name
-            .replace("_", " ")
-            .title()
+        return (template_name.replace("_", " ").title()
         )

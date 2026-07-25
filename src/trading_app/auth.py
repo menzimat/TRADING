@@ -10,6 +10,7 @@ TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 
 CLIENT_ID = ""
 CLIENT_SECRET = ""
+ACCOUNTS = {}
 
 APP_IP = "127.0.0.1"
 APP_PORT = 55665
@@ -20,21 +21,26 @@ def clear_local_creds():
     global CLIENT_ID, CLIENT_SECRET
     CLIENT_ID = ""
     CLIENT_SECRET = ""
+    ACCOUNTS = {}
 
 def load_credentials_from_keepass(config_path: str):
+    accounts = {}
+
     extractor = SchwabKeyExtractor(config_path)
     extractor.open_database()
 
     client_id = extractor.extract_field("client_id")
     client_secret = extractor.extract_field("client_secret")
+    accounts["brokerage_account"] = extractor.extract_field("brokerage_account")
+    accounts["hsa_account"] = extractor.extract_field("hsa_account")
 
-    return client_id, client_secret
+    return client_id, client_secret, accounts
 
 def get_easy_client(config_path: str):
 
-    global CLIENT_ID, CLIENT_SECRET
+    global CLIENT_ID, CLIENT_SECRET, ACCOUNTS
 
-    CLIENT_ID, CLIENT_SECRET = load_credentials_from_keepass(config_path)
+    CLIENT_ID, CLIENT_SECRET, ACCOUNTS = load_credentials_from_keepass(config_path)
  
     # Follow the instructions on the screen to authenticate your client.
     c = easy_client(
@@ -45,4 +51,4 @@ def get_easy_client(config_path: str):
         interactive=False,
         asyncio=True)
     
-    return c
+    return c, ACCOUNTS

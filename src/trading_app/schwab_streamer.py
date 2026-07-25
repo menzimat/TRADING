@@ -286,8 +286,12 @@ class SchwabStreamer:
             self.handle_account_activity
         )
 
-        await self.stream_client.login()
-
+        try:
+            await self.stream_client.login()
+        except Exception as e:
+            print(f"LOGIN Exception:", e)
+            raise
+        
         await self.stream_client.account_activity_sub()
 
         self._subscribed_symbols.clear()
