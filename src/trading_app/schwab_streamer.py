@@ -64,46 +64,58 @@ class SchwabStreamer:
         self.account_hashes = []
 
         self.symbols = self.load_symbols()
+        self.symbol_set = set(self.symbols)
+
         self._subscribed_symbols = set()
         self._subscription_lock = asyncio.Lock()
         self._subscriptions_ready = False
 
-
+        self.scanner_symbols = self.load_scanner_symbols()
+        self.scanner_symbol_set = set(self.scanner_symbols)
 
     # ======================================================
     # Watchlist
     # ======================================================
 
     def load_symbols(self):
+        return self.load_symbol_file("tickers.txt")
 
-        path = Path(
-            "cfg/tickers.txt"
-        )
+    def load_scanner_symbols(self):
+        return self.load_symbol_file("scanner_tickers.txt")
 
+    def load_symbol_file(self, filename: str) -> list[str]:
+
+        path = Path("cfg") / filename
 
         if not path.exists():
-
-            logger.warning(
-                "No ticker file found"
-            )
-
+            logger.warning("%s not found", path)
             return []
 
-
         return [
-
             line.strip().upper()
-
             for line in path.read_text().splitlines()
-
             if line.strip()
-
         ]
 
     def has_symbol(self, symbol: str) -> bool:
         """Return whether a symbol is already on the streamer watchlist."""
 
         return symbol.strip().upper() in self.symbols
+
+    async def add_scanner_symbol(self, symbol: str):
+
+        symbol = symbol.upper().strip()
+
+        if symbol in self.scanner_symbol_set:
+            return False
+
+        self.scanner_symbol_set.add(symbol)
+        self.scanner_symbols.append(symbol)
+
+        if self._subscriptions_ready:
+            await self._subscribe_symbols([symbol], add=True)
+
+        return True
 
     async def add_symbol(self, symbol: str) -> bool:
         """Add one symbol to the watchlist and subscribe it when connected."""
@@ -112,13 +124,33 @@ class SchwabStreamer:
 
         if not symbol or symbol == "-" or self.has_symbol(symbol):
             return False
-
+        self.symbol_set.add(symbol)
         self.symbols.append(symbol)
 
         if self._subscriptions_ready:
             await self._subscribe_symbols([symbol], add=True)
 
         return True
+
+    async def remove_scanner_symbol(self, symbol: str) -> bool:
+            """Remove one symbol from the scanner list and unsubscribe when live."""
+
+            symbol = symbol.strip().upper()
+
+            if not symbol or symbol not in self.scanner_symbols:
+                return False
+            
+            self.scanner_symbol_set.remove(symbol)
+            self.scanner_symbols.remove(symbol)
+
+            if self._subscriptions_ready:
+                async with self._subscription_lock:
+                    await self.stream_client.level_one_equity_unsubs([symbol])
+                    self._subscribed_symbols.discard(symbol)
+                    logger.info("Unsubscribed: %s", symbol)
+
+            return True
+
 
     async def remove_symbol(self, symbol: str) -> bool:
         """Remove one symbol from the watchlist and unsubscribe when live."""
@@ -128,6 +160,7 @@ class SchwabStreamer:
         if not symbol or symbol not in self.symbols:
             return False
 
+        self.symbol_set.remove(symbol)
         self.symbols.remove(symbol)
 
         if self._subscriptions_ready:
@@ -222,34 +255,18 @@ class SchwabStreamer:
 
     async def connect(self):
 
-        logger.info(
-            "Creating Schwab StreamClient"
-        )
+        logger.info("Creating Schwab StreamClient")
 
+        accounts = await (self.client.get_account_numbers())
 
-        accounts = await (
-            self.client
-            .get_account_numbers()
-        )
-
-
-        account_data = (
-            accounts.json()
-        )
-
+        account_data = (accounts.json())
 
         if not account_data:
-
-            raise RuntimeError(
-                "No Schwab accounts returned"
-            )
+            raise RuntimeError("No Schwab accounts returned")
 
         broker_accounts = []
-
         for acct in accounts.json():
-
             number = acct["accountNumber"]
-
             broker_accounts.append(
                 BrokerAccount(
                     display_name=f"Acct {number[-4:]}",
@@ -258,38 +275,23 @@ class SchwabStreamer:
                 )
             )
         
-        
-        account_hash = (
-            account_data[0]["hashValue"]
-        )
+        account_hash = (account_data[0]["hashValue"])
 
         self.account_hash = account_hash
         self.account_hashes = [acct["hashValue"] for acct in account_data]
 
+        logger.debug(f"Using account hash {account_hash}")
+        logger.debug(f"ACCOUNT DATA:", account_data)
 
-        logger.info(
-            f"Using account hash {account_hash}"
-        )
-        print(f"ACCOUNT DATA:", account_data)
+        self.stream_client = StreamClient(self.client, account_id=account_hash,)
 
-
-        self.stream_client = StreamClient(
-            self.client,
-            account_id=account_hash,
-        )
-
-
-        self.stream_client.add_level_one_equity_handler(
-            self.handle_quote
-        )
-        self.stream_client.add_account_activity_handler(
-            self.handle_account_activity
-        )
+        self.stream_client.add_level_one_equity_handler(self.handle_quote)
+        self.stream_client.add_account_activity_handler(self.handle_account_activity)
 
         try:
             await self.stream_client.login()
         except Exception as e:
-            print(f"LOGIN Exception:", e)
+            logger.exception(f"LOGIN Exception:", e)
             raise
         
         await self.stream_client.account_activity_sub()
@@ -297,26 +299,24 @@ class SchwabStreamer:
         self._subscribed_symbols.clear()
         self._subscriptions_ready = False
 
-
-        logger.info(
-            "Schwab websocket connected"
-        )
-
+        logger.info("Schwab websocket connected")
 
         await self.refresh_positions()
 
-        if self.symbols:
-            await self._subscribe_symbols(self.symbols)
+        subscription_symbols = sorted(self.symbol_set | self.scanner_symbol_set)
+
+        if subscription_symbols:
+            await self._subscribe_symbols(subscription_symbols)
+
         self._subscriptions_ready = True
         try:
-            print("Publishing accounts:", broker_accounts)
+            logger.debug("Publishing ACCOUNTS_LOADED:", broker_accounts)
             await self.bus.publish_system(
                 SystemEvent(
                     name="ACCOUNTS_LOADED",
                     payload=broker_accounts,
                 )
             )
-            print("Accounts event published")
         except Exception:
             logger.exception("Failed publishing ACCOUNTS_LOADED")
 
@@ -336,13 +336,13 @@ class SchwabStreamer:
         self,
         message,
     ):
-        print(message)
+        logger.debug(message)
         for record in message["content"]:
             quote = self.parse_quote(record)
             if quote is None:
                 continue
 
-            print("STREAMER:", quote)
+            logger.debug("STREAMER:", quote)
             await self.bus.publish_market(
                 MarketEvent(
                     event=EventType.QUOTES,
@@ -377,6 +377,7 @@ class SchwabStreamer:
 
     async def _refresh_account_positions(self, account_hash):
         try:
+            #TODO: CUSTOMIZE QUERY FIELDS HERE using input parameter
             fields = None
             if hasattr(self.client, "Account") and hasattr(self.client.Account, "Fields"):
                 fields = [self.client.Account.Fields.POSITIONS]
@@ -386,7 +387,7 @@ class SchwabStreamer:
             else:
                 response = self.client.get_account(account_hash, fields=fields)
 
-            logger.info(
+            logger.debug(
                 "ACCOUNT RESPONSE\n%s",
                 json.dumps(response, indent=2, default=str),
             )
@@ -396,28 +397,22 @@ class SchwabStreamer:
 
             account_payload = self._coerce_payload(response)
 
-            logger.info(
+            logger.debug(
                 "Account payload keys: %s",
                 list(account_payload.keys()) if isinstance(account_payload, dict) else type(account_payload),
             )
 
-            logger.info(
+            logger.debug(
                 "ACCOUNT PAYLOAD\n%s",
                 json.dumps(account_payload, indent=2, default=str),
             )
             positions = self._extract_positions(account_payload)
-            logger.info(
-                "Extracted %d raw positions",
-                len(positions),
-            )
+            logger.debug("Extracted %d raw positions",len(positions),)
 
             normalized_positions = []
             for position in positions:
                 normalized = self._normalize_position(position)
-                logger.info(
-                    "Normalized: %s",
-                    normalized,
-                )
+                logger.debug("Normalized: %s", normalized)
                 if normalized is None:
                     continue
                 normalized_positions.append(normalized)
@@ -476,21 +471,6 @@ class SchwabStreamer:
 
         return []
 
-    def old_extract_positions(self, payload):
-        if not isinstance(payload, dict):
-            return []
-
-        if isinstance(payload.get("positions"), list):
-            return payload["positions"]
-
-        for key in ("securitiesAccount", "account"):
-            nested = payload.get(key)
-            if isinstance(nested, dict):
-                positions = nested.get("positions")
-                if isinstance(positions, list):
-                    return positions
-
-        return []
 
     def _normalize_position(self, position):
         if not isinstance(position, dict):
@@ -546,7 +526,6 @@ class SchwabStreamer:
     def parse_quote(self,message,):
 
         try:
-
             quote = {"symbol": message["key"],}
 
             field_map = {
@@ -557,18 +536,13 @@ class SchwabStreamer:
             }
 
             for schwab_name, internal_name in field_map.items():
-
                 if schwab_name in message:
                     quote[internal_name] = message[schwab_name]
-
             return quote
-
         except Exception:
-
             logger.exception(
                 "Quote parse failure"
             )
-
             return None
 
 
@@ -579,24 +553,15 @@ class SchwabStreamer:
 
     async def disconnect(self):
 
-        logger.info(
-            "Disconnecting Schwab streamer"
-        )
+        logger.info("Disconnecting Schwab streamer")
 
 
         if self.stream_client:
 
             try:
-
-                await (
-                    self.stream_client
-                    .logout()
-                )
-
+                await (self.stream_client.logout())
             except Exception:
-
                 pass
-
 
         await self.bus.publish_system(
             SystemEvent(
@@ -604,13 +569,10 @@ class SchwabStreamer:
             )
         )
 
-
         self.stream_client = None
         self._subscriptions_ready = False
         self._subscribed_symbols.clear()
 
 
-
     def stop(self):
-
         self.running = False

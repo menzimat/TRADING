@@ -27,8 +27,9 @@ import asyncio
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, AsyncIterator
+import logging
 
-
+logger = logging.getLogger(__name__)
 
 # ==========================================================
 # Event Types
@@ -202,18 +203,10 @@ class EventBus:
         self,
         event: MarketEvent,
     ):
-
-        print("STATE:", event.payload)
-        for queue in list(
-            self.market_subscribers
-        ):
-
+        logger.debug("STATE:", event.payload)
+        for queue in list(self.market_subscribers):
             if not queue.full():
-
-                await queue.put(
-                    event
-                )
-
+                await queue.put(event)
 
 
     # ======================================================
@@ -237,18 +230,10 @@ class EventBus:
         async def iterator():
 
             try:
-
                 while True:
-
                     yield await queue.get()
-
-
             finally:
-
-                self.command_subscribers.remove(
-                    queue
-                )
-
+                self.command_subscribers.remove(queue)
 
         return iterator()
 
@@ -260,16 +245,9 @@ class EventBus:
     ):
 
 
-        for queue in list(
-            self.command_subscribers
-        ):
-
+        for queue in list(self.command_subscribers):
             if not queue.full():
-
-                await queue.put(
-                    event
-                )
-
+                await queue.put(event)
 
 
     # ======================================================
@@ -293,18 +271,10 @@ class EventBus:
         async def iterator():
 
             try:
-
                 while True:
-
                     yield await queue.get()
-
-
             finally:
-
-                self.system_subscribers.remove(
-                    queue
-                )
-
+                self.system_subscribers.remove(queue)
 
         return iterator()
 
@@ -316,30 +286,17 @@ class EventBus:
     ):
 
 
-        for queue in list(
-            self.system_subscribers
-        ):
-            print(
-                "Publishing system event:",
+        for queue in list(self.system_subscribers):
+            logger.debug(
+                "Publishing system event: %s; queue size: %d; max size: %d", 
                 event.name,
-                "queue size:",
                 queue.qsize(),
-                "max:",
                 queue.maxsize,
             )
-            if not queue.full():
-                print(
-                "Publishing system event:NOT FULL")
-            print(
-                "SYSTEM SUBSCRIBERS:",
-                len(self.system_subscribers)
-            )
+#           if not queue.full():
+#               logger.debug("Publishing system event:NOT FULL")
+            logger.info("SYSTEM SUBSCRIBERS: %d", len(self.system_subscribers))
 
             for q in self.system_subscribers:
-                print(
-                    "QUEUE:",
-                    q.qsize(),
-                    "/",
-                    q.maxsize
-                )
+                logger.debug("QUEUE:%d / %d",q.qsize(),q.maxsize)
             await queue.put(event)

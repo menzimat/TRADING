@@ -31,7 +31,8 @@ from trading_app.bus import (
     EventType,
     SystemEvent,
 )
-
+from trading_app.config import AppConfig
+from trading_app.scanner.scanner_state import ScannerState
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +119,16 @@ class StateEngine:
     def __init__(
         self,
         bus: EventBus,
+        config: AppConfig,
     ):
 
         self.bus = bus
 
+        self.config = config
+
         self.state = ApplicationState()
+
+        self.scanner_state = ScannerState(self.config)
 
         self.running = True
 
@@ -163,24 +169,13 @@ class StateEngine:
         event: MarketEvent,
     ):
 
-        print(
-        "STATE EVENT:",
-        event.event,
-        event.payload
-    )
+        logger.debug("STATE EVENT:%s : %s", event.event, event.payload)
 
         if event.event == EventType.QUOTES:
-
-            await self.update_quote(
-                event.payload
-            )
-
+            await self.update_quote(event.payload)
 
         elif event.event == EventType.POSITION:
-
-            self.update_position(
-                event.payload
-            )
+            self.update_position(event.payload)
 
         elif event.event == EventType.POSITION_SNAPSHOT:
 
@@ -189,20 +184,11 @@ class StateEngine:
                 event.payload["positions"],
             )
 
-
         elif event.event == EventType.ORDER:
-
-            self.update_order(
-                event.payload
-            )
-
+            self.update_order(event.payload)
 
         elif event.event == EventType.ACCOUNT:
-
-            self.update_account(
-                event.payload
-            )
-
+            self.update_account(event.payload)
 
 
     # ==========================================================
@@ -272,6 +258,7 @@ class StateEngine:
                 )
             )
         current.updated = time.time()
+
         return current
     
        
@@ -344,8 +331,6 @@ class StateEngine:
                 )
             )
 
-
-
     def update_order(
         self,
         order,
@@ -394,9 +379,7 @@ class StateEngine:
         symbol: str,
     ) -> Optional[QuoteState]:
 
-        return self.state.quotes.get(
-            symbol.upper()
-        )
+        return self.state.quotes.get(symbol.upper())
 
 
 
@@ -422,7 +405,7 @@ class StateEngine:
 
             position = account_positions.get(symbol)
 
-            print(
+            logger.debug(
                 f"get_position: {symbol}; "
                 f"ACCT: {account_hash}; "
                 f"Position: {position}"
@@ -435,7 +418,7 @@ class StateEngine:
         #
         position = self.state.positions.get(symbol)
 
-        print(
+        logger.debug(
             f"get_position: {symbol}; "
             f"ACCT: GLOBAL; "
             f"Position: {position}"

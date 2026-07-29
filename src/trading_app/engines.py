@@ -95,7 +95,7 @@ class Engine:
         #
 
         self.state_engine = StateEngine(
-            self.bus
+            self.bus, config=self.config,
         )
 
 

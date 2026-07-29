@@ -26,7 +26,7 @@ import queue
 import math
 from dataclasses import replace
 from typing import Optional
-
+import logging
 
 from trading_app.bus import (
     CommandEvent,
@@ -36,6 +36,10 @@ from trading_app.bus import (
 
 from trading_app.models.order import Side
 from trading_app.trading_config import QuantityType
+from trading_app.scanner.scanner_engine import ScannerEngine
+
+logger = logging.getLogger(__name__)
+
 
 class Runtime:
     """
@@ -68,6 +72,8 @@ class Runtime:
         self.state_engine = (
             state_engine
         )
+
+        self.scanner_state = self.state_engine.scanner_state
 
         self.order_factory = order_factory
         self.trade_instruction_factory = trade_instruction_factory
@@ -110,6 +116,7 @@ class Runtime:
         self.accounts = []
         self.selected_account_hash = None
 
+        self.scanner_engine = ScannerEngine( self.bus, self.scanner_state,)
 
     def set_simulation_mode(self, enabled):
         self.simulation_mode = enabled
@@ -120,7 +127,7 @@ class Runtime:
         return not self.simulation_mode
     
     def on_simulation_changed(self, enabled ):
-        print(f"RUNTIME on_simulation_changed: {enabled}")
+        logger.info(f"RUNTIME on_simulation_changed: {enabled}")
         self.set_simulation_mode(enabled)
 
         
@@ -218,7 +225,7 @@ class Runtime:
         if cfg.defaults.account in acct_list:
             for acct in accounts:
                 if acct.account_number == acct_list[cfg.defaults.account]:
-                    print(f"Setting Default Account to: ", cfg.defaults.account, " : ", acct_list[cfg.defaults.account])
+                    logger.info(f"Setting Default Account to: %s : %s", cfg.defaults.account, acct_list[cfg.defaults.account])
                     self.set_selected_account(acct.account_hash)
                     self.gui.set_accounts(self.accounts, acct.account_number)
                     break
@@ -244,7 +251,7 @@ class Runtime:
     # ==========================================================
 
     def start(self):
-        print("RUNTIME: START")
+        logger.info("RUNTIME: START")
         if self.running:
 
             return
@@ -252,7 +259,7 @@ class Runtime:
 
         self.running = True
 
-        print("RUNTIME: thread starting")
+        logger.info("RUNTIME: thread starting")
         self.thread = threading.Thread(
             target=self._async_thread,
             daemon=True,
@@ -302,15 +309,21 @@ class Runtime:
             ),
 
             asyncio.create_task(
+                self.scanner_engine.run()
+            ),
+            
+            asyncio.create_task(
                 self.market_listener()
             ),
 
             asyncio.create_task(
                 self.system_listener()
             ),
+
+
         ]
 
-        print("RUNTIME: async services starting")
+        logger.info("RUNTIME: async services starting")
         try:
         
             await asyncio.gather(
@@ -485,16 +498,18 @@ class Runtime:
 
     async def system_listener(self):
 
+        logger.info("system_listener started")
         async for event in self.bus.subscribe_system():
-
+    
             try:
+                logger.info(
+                    "system_listener received %s",
+                    event.name,
+                )
                 self.gui_queue.put_nowait(event)
 
             except queue.Full:
-                print(
-                    "GUI queue full, dropping system event:",
-                    event.name,
-                )
+                logger.info("GUI queue full, dropping system event: %s", event.name, )
 
 
     # ==========================================================
@@ -504,27 +519,21 @@ class Runtime:
     def _poll_gui_queue(self,):
 
         if not self.gui:
-
             return
 
+        logger.info(
+            "GUI queue size = %d",
+            self.gui_queue.qsize(),
+        )
 
         while True:
-
             try:
-
                 event = (self.gui_queue.get_nowait())
-
                 self._handle_gui_event(event)
-
-
             except queue.Empty:
-
                 break
 
-
-
         if self.running:
-
             self.gui.root.after(50, self._poll_gui_queue,)
 
 
@@ -538,16 +547,14 @@ class Runtime:
         #
         # Quote updates
         #
-        print("_handle_gui_event:", type(event), event)
+        logger.debug("_handle_gui_event: %s : %s", type(event), event)
         if isinstance(event, SystemEvent):
             if event.name == "ACCOUNTS_LOADED":
-
                 self.accounts = list(event.payload or [])
-
-                
-
+            
                 if self.accounts:
                     if self.account_list and self.trading_config:
+                        #Default to the configured defaults account from the trading.yaml
                         self.set_default_account(self.accounts, self.account_list, self.trading_config)
                     else:
                         #
@@ -555,12 +562,8 @@ class Runtime:
                         # the GUI and immediately display only
                         # that account's positions.
                         #
-                        self.set_selected_account(
-                            self.accounts[0].account_hash
-                        )
-                        self.gui.set_accounts(
-                            self.accounts, self.accounts[0].account_number
-                        )
+                        self.set_selected_account(self.accounts[0].account_hash)
+                        self.gui.set_accounts(self.accounts, self.accounts[0].account_number)
 
                 return
             elif event.name == "PRICE_UPDATED":
@@ -591,6 +594,12 @@ class Runtime:
             elif event.name == "ORDER_ACCEPTED":
                 self.refresh_positions()
                 return
+            elif event.name == "SCANNER_UPDATED":
+                logger.info(
+                    "Runtime received scanner update: %d symbols",
+                    len(event.payload),
+                )
+                self.gui.update_scanner(event.payload )
             elif event.name == "CONNECTED":
                 self.gui.set_connection_status(
                     "Connected"
@@ -769,3 +778,6 @@ class Runtime:
         ):
 
             self.state_engine.stop()
+
+        if hasattr(self.scanner_engine, "stop"):
+            self.scanner_engine.stop()

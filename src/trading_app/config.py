@@ -22,6 +22,7 @@ DEFAULTS = {
     "tickers_file": "./cfg/tickers.txt",
     "trading_config": "./cfg/trading.yaml",
     "keepass_config": "./cfg/config.json",
+    "history_update_frequency": 500,
     "logging": {
         "root_level": "INFO",
         "modules": {},
@@ -61,6 +62,8 @@ class AppConfig:
     trading_config: str
 
     keepass_config: str
+
+    history_update_frequency: int
 
     logging: dict[str, Any]
 
