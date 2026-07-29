@@ -16,3 +16,6 @@ Schwab-py_Hotkey_Sell_Prompt
 *.log
 *.zip
 logs/
+src/scanner_test11.py
+src/scanner_test12.py
+src/scanner_test13.py
