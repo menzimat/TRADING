@@ -37,6 +37,10 @@ from trading_app.gui.trade_instruction_panel import (
     TradeInstructionPanel,
 )
 
+from trading_app.gui.momentum_table import (
+    MomentumTable,
+)
+
 class TradingApplication:
     """
     Main trading GUI.
@@ -202,13 +206,40 @@ class TradingApplication:
         # Quote table
         #
 
-        self.quote_table = QuoteTable(
-            main,
-            on_select=
-                self._symbol_selected,
-            on_delete=
-                self._remove_symbol,
+        
+
+        left = ttk.Frame(main)
+
+        left.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
         )
+
+
+        left.rowconfigure(
+            0,
+            weight=3,
+        )
+
+        left.rowconfigure(
+            1,
+            weight=1,
+        )
+
+
+        left.columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.quote_table = QuoteTable(
+                    left,
+                    on_select=
+                        self._symbol_selected,
+                    on_delete=
+                        self._remove_symbol,
+                )
 
         self.quote_table.widget().grid(
             row=0,
@@ -216,6 +247,17 @@ class TradingApplication:
             sticky="nsew",
         )
 
+        self.momentum_table = MomentumTable(
+            left
+        )
+
+
+        self.momentum_table.widget().grid(
+            row=1,
+            column=0,
+            sticky="nsew",
+            pady=5,
+        )
 
         #
         # Order panel
@@ -306,9 +348,8 @@ class TradingApplication:
                 "Orders will NOT be transmitted to Schwab.")
 
             self.status_bar.set_execution_mode(enabled)
-            print(f"SIMULATION ENABLED: {enabled}")
+            self.logger.info(f"SIMULATION ENABLED: {enabled}")
         else:
-            print(f"LIVE TRADING ENABLED: {enabled}")
             self.logger.info(f"***** LIVE TRADING ENABLED {enabled}*****")
             if not messagebox.askyesno(
                 "Enable Live Trading",
@@ -316,19 +357,17 @@ class TradingApplication:
                 "REAL orders will be sent to Schwab.\n\n"
                 "Continue?"
             ):
-                print(f"LIVE TRADING REJECTED ?: {enabled}")
                 self.logger.info(f"***** LIVE TRADING REJECTED ? {enabled}*****")
                 self.status_bar.set_execution_mode(tk.BooleanVar(value=True))
                 return
 
-            print(f"LIVE TRADING ENABLED2: {enabled}")
             self.logger.info("***** LIVE TRADING ENABLED2 *****")
             self.status_bar.set_execution_mode(enabled)
             
 
     def _simulation_changed(self, enabled):
 
-        print(f"_simulation_changed: {enabled}")
+        self.logger.info(f"_simulation_changed: {enabled}")
         if self.on_simulation_changed:
             self.on_simulation_changed(enabled)
 
@@ -341,20 +380,15 @@ class TradingApplication:
         accounts,
         default_account_number,
     ):
-        print("APPLICATION set_accounts", accounts)
-        self.trade_instruction_panel.set_accounts(
-            accounts, default_account_number
-        )
+        self.logger.debug("APPLICATION set_accounts: %s", accounts)
+        self.trade_instruction_panel.set_accounts(accounts, default_account_number)
 
     def _symbol_selected(
         self,
         symbol,
     ):
 
-        print(
-            "APPLICATION: selected symbol",
-            symbol,
-        )
+        self.logger.info("APPLICATION: selected symbol: %s", symbol,)
 
         #
         # Change panel context first
@@ -374,11 +408,7 @@ class TradingApplication:
             quote = self.on_get_quote(
                 symbol
             )
-            print(
-                "APPLICATION cached quote:",
-                quote,
-                type(quote),
-            )
+            self.logger.info("APPLICATION cached quote: %s : %s", quote, type(quote),)
 
             if quote is not None:
 
@@ -518,12 +548,32 @@ class TradingApplication:
     # Public API used by runtime
     # -------------------------------------------------------------
 
+    def update_scanner(
+        self,
+        scanner_data,
+    ):
+        """
+        Update momentum scanner display.
+
+        Called from runtime after SCANNER_UPDATED 
+        event.
+        """
+        self.logger.info(
+                "GUI received %d scanner symbols",
+                len(scanner_data),
+            )
+        
+        self.momentum_table.update_scanner(
+            scanner_data
+        )
+
+
     def update_quote(
         self,
         symbol,
         quote,
     ):
-        print("GUI:", symbol)
+        self.logger.debug("GUI: %s", symbol)
         self.quote_table.update_quote(
             symbol,
             quote,
