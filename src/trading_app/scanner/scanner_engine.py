@@ -43,7 +43,7 @@ class  ScannerEngine:
 
     async def on_quote(self, event):
 
-        self.logger.info("ScannerEngine.on_quote entered")
+        self.logger.debug("ScannerEngine.on_quote entered")
 
         state = self.scanner_state.update_quote(event.payload)
 
@@ -56,14 +56,14 @@ class  ScannerEngine:
         if not snapshot:
             return
         
-        self.logger.info(
+        self.logger.debug(
             "Scanner updated %s last=%s volume=%s",
             state.symbol,
             state.last,
             state.total_volume,
         )
 
-        self.logger.info(
+        self.logger.debug(
             "Publishing %d dirty scanner symbols",
             len(snapshot),
         )
@@ -75,4 +75,4 @@ class  ScannerEngine:
             )
         )
 
-        self.logger.info("SCANNER_UPDATED publish completed")
+        self.logger.debug("SCANNER_UPDATED publish completed")

@@ -166,7 +166,7 @@ class ScannerState:
         return snapshot
 
     def dirty_snapshot(self):
-        self.logger.info("dirty_snapshot() called")
+        self.logger.debug("dirty_snapshot() called")
         snapshot = {}
 
         for symbol, state in self.symbols.items():
@@ -181,6 +181,7 @@ class ScannerState:
                 "volume": state.total_volume,
                 "volume_pct": state.volume_change_from(60),
                 "price_pct": state.pct_1m,
+                "momentum_score": state.momentum_score,
             }
 
             state.dirty = False

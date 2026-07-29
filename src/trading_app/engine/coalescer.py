@@ -122,7 +122,7 @@ class TickCoalescer:
 
         self.running = True
 
-        logger.info(
+        logger.debug(
             "TickCoalescer started (%d ms)",
             self.flush_ms
         )
@@ -202,7 +202,7 @@ class TickCoalescer:
 
     async def shutdown(self):
 
-        logger.info(
+        logger.debug(
             "Stopping TickCoalescer"
         )
 

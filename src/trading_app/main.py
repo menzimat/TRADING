@@ -23,5 +23,5 @@ def configure_logging():
 if __name__ == "__main__":
     configure_logging()
     logger = logging.getLogger(__name__)
-    logger.info("ENGINE: starting backend")
+    logger.debug("ENGINE: starting backend")
     Engine().run()

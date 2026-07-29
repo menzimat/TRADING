@@ -166,7 +166,7 @@ class ScannerSymbolState:
 
         if old_values != new_values:
             self.dirty = True
-            self.logger.info(
+            self.logger.debug(
                 "scanner_symmbol updating DIRTY for %s",
                 self.symbol,
             )
@@ -177,7 +177,7 @@ class ScannerSymbolState:
         if self.should_append_history(now):
             self.append_tick(now)
             self.purge_old_history()
-            self.logger.info(
+            self.logger.debug(
                             "scanner_symmbol updated history at %s",
                             str(now),
                         )
@@ -186,7 +186,7 @@ class ScannerSymbolState:
         # Refresh derived statistics
         #
         self.update_statistics()
-        self.logger.info(
+        self.logger.debug(
                         "scanner_symmbol updated statistics")
 
 

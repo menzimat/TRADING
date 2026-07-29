@@ -54,7 +54,7 @@ class SimulationExecutor:
 
         self.next_id += 1
 
-        logger.info(
+        logger.debug(
             "SIMULATION ORDER\n"
             "ID=%s\n"
             "Source=%s\n"
@@ -102,7 +102,7 @@ class CommandProcessor:
 
     async def run(self):
 
-        logger.info(
+        logger.debug(
             "CommandProcessor started"
         )
 
@@ -295,7 +295,7 @@ class CommandProcessor:
 
         order_payload = request.to_schwab_order_spec()
 
-        logger.info(
+        logger.debug(
             "Submitting order payload: %s",
             order_payload,
         )
@@ -336,7 +336,7 @@ class CommandProcessor:
             )
             return
 
-        logger.info(
+        logger.debug(
             "Broker order response: %s",
             response,
         )

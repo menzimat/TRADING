@@ -295,7 +295,7 @@ class EventBus:
             )
 #           if not queue.full():
 #               logger.debug("Publishing system event:NOT FULL")
-            logger.info("SYSTEM SUBSCRIBERS: %d", len(self.system_subscribers))
+            logger.debug("SYSTEM SUBSCRIBERS: %d", len(self.system_subscribers))
 
             for q in self.system_subscribers:
                 logger.debug("QUEUE:%d / %d",q.qsize(),q.maxsize)

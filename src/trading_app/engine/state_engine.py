@@ -140,7 +140,7 @@ class StateEngine:
 
     async def run(self):
 
-        logger.info(
+        logger.debug(
             "StateEngine started"
         )
 

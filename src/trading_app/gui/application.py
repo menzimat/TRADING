@@ -344,30 +344,30 @@ class TradingApplication:
 
     def _update_execution_indicator(self, enabled):
         if enabled:
-            self.logger.info("***** SIMULATION MODE ENABLED *****\n"
+            self.logger.debug("***** SIMULATION MODE ENABLED *****\n"
                 "Orders will NOT be transmitted to Schwab.")
 
             self.status_bar.set_execution_mode(enabled)
-            self.logger.info(f"SIMULATION ENABLED: {enabled}")
+            self.logger.debug(f"SIMULATION ENABLED: {enabled}")
         else:
-            self.logger.info(f"***** LIVE TRADING ENABLED {enabled}*****")
+            self.logger.debug(f"***** LIVE TRADING ENABLED {enabled}*****")
             if not messagebox.askyesno(
                 "Enable Live Trading",
                 "Simulation Mode will be disabled.\n\n"
                 "REAL orders will be sent to Schwab.\n\n"
                 "Continue?"
             ):
-                self.logger.info(f"***** LIVE TRADING REJECTED ? {enabled}*****")
+                self.logger.debug(f"***** LIVE TRADING REJECTED ? {enabled}*****")
                 self.status_bar.set_execution_mode(tk.BooleanVar(value=True))
                 return
 
-            self.logger.info("***** LIVE TRADING ENABLED2 *****")
+            self.logger.debug("***** LIVE TRADING ENABLED2 *****")
             self.status_bar.set_execution_mode(enabled)
             
 
     def _simulation_changed(self, enabled):
 
-        self.logger.info(f"_simulation_changed: {enabled}")
+        self.logger.debug(f"_simulation_changed: {enabled}")
         if self.on_simulation_changed:
             self.on_simulation_changed(enabled)
 
@@ -388,7 +388,7 @@ class TradingApplication:
         symbol,
     ):
 
-        self.logger.info("APPLICATION: selected symbol: %s", symbol,)
+        self.logger.debug("APPLICATION: selected symbol: %s", symbol,)
 
         #
         # Change panel context first
@@ -408,7 +408,7 @@ class TradingApplication:
             quote = self.on_get_quote(
                 symbol
             )
-            self.logger.info("APPLICATION cached quote: %s : %s", quote, type(quote),)
+            self.logger.debug("APPLICATION cached quote: %s : %s", quote, type(quote),)
 
             if quote is not None:
 
@@ -558,7 +558,7 @@ class TradingApplication:
         Called from runtime after SCANNER_UPDATED 
         event.
         """
-        self.logger.info(
+        self.logger.debug(
                 "GUI received %d scanner symbols",
                 len(scanner_data),
             )

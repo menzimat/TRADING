@@ -147,7 +147,7 @@ class SchwabStreamer:
                 async with self._subscription_lock:
                     await self.stream_client.level_one_equity_unsubs([symbol])
                     self._subscribed_symbols.discard(symbol)
-                    logger.info("Unsubscribed: %s", symbol)
+                    logger.debug("Unsubscribed: %s", symbol)
 
             return True
 
@@ -167,7 +167,7 @@ class SchwabStreamer:
             async with self._subscription_lock:
                 await self.stream_client.level_one_equity_unsubs([symbol])
                 self._subscribed_symbols.discard(symbol)
-                logger.info("Unsubscribed: %s", symbol)
+                logger.debug("Unsubscribed: %s", symbol)
 
         return True
 
@@ -193,7 +193,7 @@ class SchwabStreamer:
             else:
                 await self.stream_client.level_one_equity_subs(pending)
             self._subscribed_symbols.update(pending)
-            logger.info("Subscribed: %s", pending)
+            logger.debug("Subscribed: %s", pending)
 
 
 
@@ -255,7 +255,7 @@ class SchwabStreamer:
 
     async def connect(self):
 
-        logger.info("Creating Schwab StreamClient")
+        logger.debug("Creating Schwab StreamClient")
 
         accounts = await (self.client.get_account_numbers())
 
@@ -299,7 +299,7 @@ class SchwabStreamer:
         self._subscribed_symbols.clear()
         self._subscriptions_ready = False
 
-        logger.info("Schwab websocket connected")
+        logger.debug("Schwab websocket connected")
 
         await self.refresh_positions()
 
@@ -553,7 +553,7 @@ class SchwabStreamer:
 
     async def disconnect(self):
 
-        logger.info("Disconnecting Schwab streamer")
+        logger.debug("Disconnecting Schwab streamer")
 
 
         if self.stream_client:

@@ -127,7 +127,7 @@ class Runtime:
         return not self.simulation_mode
     
     def on_simulation_changed(self, enabled ):
-        logger.info(f"RUNTIME on_simulation_changed: {enabled}")
+        logger.debug(f"RUNTIME on_simulation_changed: {enabled}")
         self.set_simulation_mode(enabled)
 
         
@@ -225,7 +225,7 @@ class Runtime:
         if cfg.defaults.account in acct_list:
             for acct in accounts:
                 if acct.account_number == acct_list[cfg.defaults.account]:
-                    logger.info(f"Setting Default Account to: %s : %s", cfg.defaults.account, acct_list[cfg.defaults.account])
+                    logger.debug(f"Setting Default Account to: %s : %s", cfg.defaults.account, acct_list[cfg.defaults.account])
                     self.set_selected_account(acct.account_hash)
                     self.gui.set_accounts(self.accounts, acct.account_number)
                     break
@@ -251,7 +251,7 @@ class Runtime:
     # ==========================================================
 
     def start(self):
-        logger.info("RUNTIME: START")
+        logger.debug("RUNTIME: START")
         if self.running:
 
             return
@@ -259,7 +259,7 @@ class Runtime:
 
         self.running = True
 
-        logger.info("RUNTIME: thread starting")
+        logger.debug("RUNTIME: thread starting")
         self.thread = threading.Thread(
             target=self._async_thread,
             daemon=True,
@@ -323,7 +323,7 @@ class Runtime:
 
         ]
 
-        logger.info("RUNTIME: async services starting")
+        logger.debug("RUNTIME: async services starting")
         try:
         
             await asyncio.gather(
@@ -498,18 +498,18 @@ class Runtime:
 
     async def system_listener(self):
 
-        logger.info("system_listener started")
+        logger.debug("system_listener started")
         async for event in self.bus.subscribe_system():
     
             try:
-                logger.info(
+                logger.debug(
                     "system_listener received %s",
                     event.name,
                 )
                 self.gui_queue.put_nowait(event)
 
             except queue.Full:
-                logger.info("GUI queue full, dropping system event: %s", event.name, )
+                logger.debug("GUI queue full, dropping system event: %s", event.name, )
 
 
     # ==========================================================
@@ -521,7 +521,7 @@ class Runtime:
         if not self.gui:
             return
 
-        logger.info(
+        logger.debug(
             "GUI queue size = %d",
             self.gui_queue.qsize(),
         )
@@ -595,7 +595,7 @@ class Runtime:
                 self.refresh_positions()
                 return
             elif event.name == "SCANNER_UPDATED":
-                logger.info(
+                logger.debug(
                     "Runtime received scanner update: %d symbols",
                     len(event.payload),
                 )
