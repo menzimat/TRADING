@@ -37,12 +37,49 @@ class ScannerState:
         # Symbols currently matching scanner criteria
         self.candidates: set[str] = set()
 
+        # Permanent scanner watch universe
+        self.watch_symbols: set[str] = set()
+
         self.logger = logging.getLogger(__name__)
 
 
     # ------------------------------------------------------------------
     # Symbol management
     # ------------------------------------------------------------------
+
+    def add_watch_symbol(self, symbol: str):
+        symbol = symbol.upper()
+        self.watch_symbols.add(symbol)
+        #
+        # Create ScannerSymbolState immediately so the
+        # first websocket quote isn't dropped.
+        #
+        self.ensure_symbol(symbol)
+
+
+    def remove_watch_symbol(self, symbol: str):
+        symbol = symbol.upper()
+        self.watch_symbols.discard(symbol)
+        self.remove_symbol(symbol)
+
+    def set_watch_symbols(self, symbols):
+        desired = {s.upper() for s in symbols}
+        #
+        # Remove symbols no longer wanted
+        #
+        for symbol in self.watch_symbols - desired:
+            self.remove_watch_symbol(symbol)
+        #
+        # Add new ones
+        #
+        for symbol in desired - self.watch_symbols:
+            self.add_watch_symbol(symbol)
+
+
+    def is_watch_symbol(self, symbol: str):
+        return symbol.upper() in self.watch_symbols
+
+        
     def ensure_symbol(self, symbol: str) -> ScannerSymbolState:
         symbol = symbol.upper()
 
@@ -108,6 +145,7 @@ class ScannerState:
     def remove_candidate(self, symbol: str):
 
         self.candidates.discard(symbol.upper())
+        self.symbols.pop(symbol, None)
 
     def is_candidate(self, symbol: str) -> bool:
 

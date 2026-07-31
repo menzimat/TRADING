@@ -108,22 +108,18 @@ class OffsetDefinition:
 # Trading defaults
 # ---------------------------------------------------------
 
+
+
 @dataclass(frozen=True)
 class TradingDefaults:
-
     side: Side
-
     account: str
-
     quantity: QuantityDefinition
-
     tif: TimeInForce
-
     order_type: OrderType
-
     price_basis: PriceBasis
-
     price_offset: str
+    
 
 
 # ---------------------------------------------------------

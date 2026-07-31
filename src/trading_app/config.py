@@ -9,7 +9,7 @@ Configuration is loaded once during startup.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,17 @@ DEFAULTS = {
     "trading_config": "./cfg/trading.yaml",
     "keepass_config": "./cfg/config.json",
     "history_update_frequency": 500,
+    "momentum": {
+        "enabled": True,
+        "use_schwab_movers": True,
+        "movers_poll_interval": 6,
+        "movers_frequency": 5,
+        "movers_direction": "up",
+        "max_movers": 10,
+        "merge_scanner_file": True,"min_mover_price": 5.0,
+        "max_mover_price": 20.0,
+        "min_volume": 5000000
+    },
     "logging": {
         "root_level": "INFO",
         "modules": {},
@@ -44,6 +55,19 @@ DEFAULTS = {
 
 
 }
+
+@dataclass(frozen=True)
+class MomentumSettings:
+    use_schwab_movers: bool = True
+    movers_poll_interval: int = 6
+    movers_frequency: int = 5
+    movers_direction: str = "up"
+    max_movers: int = 10
+    merge_scanner_file: bool = True
+    delete_scanner_symbols = False
+    min_mover_price: float = 0.7
+    max_mover_price: float = 20.0
+    min_volume: int = 5000000
 
 
 @dataclass(frozen=True)
@@ -80,6 +104,8 @@ class AppConfig:
     default_sell_offset: float
 
     default_stop_offset: float
+
+    momentum: MomentumSettings = field(default_factory=MomentumSettings)
 
     @classmethod
     def load(

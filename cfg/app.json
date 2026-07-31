@@ -6,6 +6,18 @@
 "trading_config": "./cfg/trading.yaml",
 "keepass_config": "./cfg/config.json",
 "history_update_frequency": 500,
+"momentum": {
+  "enabled": true,
+  "use_schwab_movers": true,
+  "movers_poll_interval": 6,
+  "movers_frequency": 0,
+  "movers_direction": "up",
+  "max_movers": 10,
+  "merge_scanner_file": true,
+  "min_mover_price": 0.7,
+  "max_mover_price": 20.0,
+  "min_volume": 5000000
+  },
 "logging": {
         "root_level": "INFO",
 

@@ -45,6 +45,15 @@ class  ScannerEngine:
 
         self.logger.debug("ScannerEngine.on_quote entered")
 
+        symbol = event.payload["symbol"].upper()
+
+        if not self.scanner_state.is_watch_symbol(symbol):
+            self.logger.debug(
+                "ScannerEngine.on_quote DROPPING: %s",
+                symbol,
+            )
+            return
+        
         state = self.scanner_state.update_quote(event.payload)
 
         try:

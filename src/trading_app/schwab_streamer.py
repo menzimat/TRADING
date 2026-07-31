@@ -24,6 +24,7 @@ import inspect
 import logging
 import json
 from pathlib import Path
+from contextlib import suppress
 from trading_app.models.broker_account import BrokerAccount
 from schwab.streaming import StreamClient
 
@@ -73,6 +74,69 @@ class SchwabStreamer:
         self.scanner_symbols = self.load_scanner_symbols()
         self.scanner_symbol_set = set(self.scanner_symbols)
 
+        for symbol in self.scanner_symbols:
+            self.state_engine.scanner_state.add_watch_symbol(symbol)
+
+        self.movers_task = None
+
+        momentum = getattr(self.state_engine.config, "momentum", None)
+
+#        if momentum:
+#           print(f"momentum: {momentum}")
+
+        if momentum["enabled"]:
+            self.use_schwab_movers = (
+                momentum["use_schwab_movers"]
+                if momentum
+                else False
+            )
+
+            self.movers_poll_interval = (
+                momentum["movers_poll_interval"]
+                if momentum
+                else 6
+            )
+
+            self.movers_frequency = (
+                momentum["movers_frequency"]
+                if momentum
+                else 5
+            )
+
+            self.max_movers = (
+                momentum["max_movers"]
+                if momentum
+                else 10
+            )
+
+            self.merge_scanner_file = (
+                momentum["merge_scanner_file"]
+                if momentum
+                else True
+            )
+
+            self.min_mover_price = (
+                momentum["min_mover_price"]
+                if momentum
+                else 0.7
+            )
+
+            self.max_mover_price = (
+                momentum["max_mover_price"]
+                if momentum
+                else 20.0
+            )
+
+            self.min_volume = (
+                momentum["min_volume"]
+                if momentum
+                else 5000000
+            )
+
+
+            self.base_scanner_symbols = set(self.scanner_symbols)
+
+
     # ======================================================
     # Watchlist
     # ======================================================
@@ -106,11 +170,18 @@ class SchwabStreamer:
 
         symbol = symbol.upper().strip()
 
+        logger.debug(
+            "SCANNER ADD: %s  count=%d",
+            symbol,
+            len(self.scanner_symbols),
+        )
+
         if symbol in self.scanner_symbol_set:
             return False
 
         self.scanner_symbol_set.add(symbol)
         self.scanner_symbols.append(symbol)
+        self.state_engine.scanner_state.add_candidate(symbol)
 
         if self._subscriptions_ready:
             await self._subscribe_symbols([symbol], add=True)
@@ -120,6 +191,11 @@ class SchwabStreamer:
     async def add_symbol(self, symbol: str) -> bool:
         """Add one symbol to the watchlist and subscribe it when connected."""
 
+        logger.info(
+            "QUOTE ADD: %s  count=%d",
+            symbol,
+            len(self.symbols),
+        )
         symbol = symbol.strip().upper()
 
         if not symbol or symbol == "-" or self.has_symbol(symbol):
@@ -142,12 +218,13 @@ class SchwabStreamer:
             
             self.scanner_symbol_set.remove(symbol)
             self.scanner_symbols.remove(symbol)
+            self.state_engine.scanner_state.remove_candidate(symbol)
 
             if self._subscriptions_ready:
                 async with self._subscription_lock:
                     await self.stream_client.level_one_equity_unsubs([symbol])
                     self._subscribed_symbols.discard(symbol)
-                    logger.debug("Unsubscribed: %s", symbol)
+                    logger.info("Unsubscribed: %s", symbol)
 
             return True
 
@@ -195,6 +272,121 @@ class SchwabStreamer:
             self._subscribed_symbols.update(pending)
             logger.debug("Subscribed: %s", pending)
 
+
+    def _frequency_enum(self):
+
+        freq = self.client.Movers.Frequency
+
+        mapping = {
+            0: freq.ZERO,
+            1: freq.ONE,
+            5: freq.FIVE,
+            10: freq.TEN,
+            30: freq.THIRTY,
+            60: freq.SIXTY,
+        }
+
+        return mapping.get(
+            self.movers_frequency,
+            freq.FIVE,
+        )
+
+
+    async def get_equity_movers(self):
+
+        response = await self.client.get_movers(
+            self.client.Movers.Index.EQUITY_ALL,
+            sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+            frequency=self._frequency_enum(),)
+
+        response.raise_for_status()
+        payload = response.json()
+        symbols = []
+
+        logger.debug("MOVERS PAYLOAD TYPE: %s", type(payload))
+        logger.debug("MOVERS PAYLOAD: %s", json.dumps(payload, indent=2))
+
+        if isinstance(payload, list):
+            movers = payload
+        elif isinstance(payload, dict):
+            movers = None
+
+            for value in payload.values():
+                if (isinstance(value, list) and value and isinstance(value[0], dict)):
+                    movers = value
+                    break
+            if movers is None:
+                movers = []
+        else:
+            movers = []
+
+        for item in movers:
+            symbol = item.get("symbol")
+            if symbol:
+                price = item.get("lastPrice")
+
+                if price is None:
+                    continue
+
+                if price < self.min_mover_price:
+                    continue
+
+                if self.max_mover_price is not None and price > self.max_mover_price:
+                    continue
+                symbols.append(symbol.upper())
+
+        return symbols[: self.max_movers]
+
+
+    async def update_mover_symbols(self, movers):
+
+        desired = set(movers)
+
+        logger.debug(
+            "Mover update: %s",
+            sorted(desired),
+        )
+
+        if self.merge_scanner_file:
+            desired |= self.base_scanner_symbols
+            self.state_engine.scanner_state.set_watch_symbols(desired)
+
+        current = set(self.scanner_symbols)
+
+        for symbol in desired - current:
+            await self.add_scanner_symbol(symbol)
+            self.state_engine.scanner_state.add_watch_symbol(symbol)
+            
+
+        #
+        # Do NOT remove symbols for now. Let the list grow.
+        #
+        for symbol in current - desired:
+            if symbol not in self.base_scanner_symbols:
+                await self.remove_scanner_symbol(symbol)
+                self.state_engine.scanner_state.remove_watch_symbol(symbol)
+
+
+    async def movers_poll_loop(self):
+
+        logger.debug(
+            "Schwab movers polling every %d seconds",
+            self.movers_poll_interval,
+        )
+
+        while self.running:
+            try:
+                movers = await self.get_equity_movers()
+                await self.update_mover_symbols(movers)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Unable to refresh Schwab movers"
+                )
+            await asyncio.sleep(
+                self.movers_poll_interval
+            )
 
 
     # ======================================================
@@ -298,7 +490,6 @@ class SchwabStreamer:
 
         self._subscribed_symbols.clear()
         self._subscriptions_ready = False
-
         logger.debug("Schwab websocket connected")
 
         await self.refresh_positions()
@@ -309,6 +500,10 @@ class SchwabStreamer:
             await self._subscribe_symbols(subscription_symbols)
 
         self._subscriptions_ready = True
+
+        if (self.use_schwab_movers and self.movers_task is None):
+                    self.movers_task = asyncio.create_task(self.movers_poll_loop())
+
         try:
             logger.debug("Publishing ACCOUNTS_LOADED:", broker_accounts)
             await self.bus.publish_system(
@@ -557,6 +752,12 @@ class SchwabStreamer:
 
 
         if self.stream_client:
+            if self.movers_task:
+                self.movers_task.cancel()
+
+                with suppress(asyncio.CancelledError):
+                    await self.movers_task
+                self.movers_task = None
 
             try:
                 await (self.stream_client.logout())

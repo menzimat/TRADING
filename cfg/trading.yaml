@@ -22,6 +22,7 @@
 # ============================================================
 
 
+
 defaults:
 
   side: BUY
@@ -370,3 +371,5 @@ templates:
   refresh_quotes:
 
     action: REFRESH_QUOTES
+
+
