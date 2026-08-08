@@ -94,8 +94,82 @@ class MomentumTable:
 
         return width
 
-
     def refresh_all_rows(self):
+        """
+        Refresh all displayed rows using the currently selected
+        momentum period.
+
+        This is the sole Treeview rendering path.
+        """
+
+        period = self.period_seconds.get()
+
+        period_map = {
+            5: {
+                "price_pct": "pct_5s",
+                "volume_rate": "avg_vol_30s",
+            },
+            10: {
+                "price_pct": "pct_10s",
+                "volume_rate": "avg_vol_30s",
+            },
+            30: {
+                "price_pct": "pct_30s",
+                "volume_rate": "avg_vol_30s",
+            },
+            60: {
+                "price_pct": "pct_1m",
+                "volume_rate": "avg_vol_1m",
+            },
+            300: {
+                "price_pct": "pct_5m",
+                "volume_rate": "avg_vol_5m",
+            },
+        }
+
+        metrics = period_map.get(period)
+
+        if metrics is None:
+            self.logger.warning(
+                "Unsupported momentum period: %s",
+                period,
+            )
+            return
+
+        price_key = metrics["price_pct"]
+        volume_key = metrics["volume_rate"]
+
+        for symbol, data in self.row_data.items():
+
+            iid = self.rows.get(symbol)
+
+            if iid is None:
+                continue
+
+            values = (
+                symbol,
+                f"{data.get('last', 0):.2f}",
+                f"{data.get('bid', 0):.2f}",
+                f"{data.get('ask', 0):.2f}",
+                f"{data.get('volume', 0):,}",
+                f"{data.get(volume_key, 0):,.0f}",
+                f"{data.get(price_key, 0):.2f}%",
+                f"{data.get('momentum_score', 0):.2f}",
+            )
+
+            self.tree.item(
+                iid,
+                values=values,
+                tags=(
+                    self._price_tag(
+                        data,
+                        price_key,
+                    ),
+                ),
+            )
+
+
+    def old_refresh_all_rows(self):
         """
         Refresh displayed rows using the currently selected momentum period.
 
@@ -476,7 +550,145 @@ class MomentumTable:
 
         return "neutral"
 
+    def _price_tag(self, data, price_key):
+        """
+        Return the Treeview tag for the selected price metric.
+        """
+
+        try:
+            value = float(data.get(price_key, 0))
+        except (TypeError, ValueError):
+            return "neutral"
+
+        if value > 0:
+            return "positive"
+
+        if value < 0:
+            return "negative"
+
+        return "neutral"
+
+
+    def new_update_scanner(self, symbols):
+        """
+        Replace the current scanner snapshot and refresh the table.
+
+        Rendering is handled exclusively by refresh_all_rows().
+        """
+
+        if symbols is None:
+            return
+
+        self.logger.debug(
+            "Momentum scanner update type: %s",
+            type(symbols),
+        )
+
+        self.logger.debug(
+            "Momentum scanner received %d symbols",
+            len(symbols),
+        )
+
+        #
+        # Replace the authoritative scanner snapshot.
+        #
+        self.row_data = dict(symbols)
+
+        #
+        # Remove rows for symbols no longer present.
+        #
+        current_symbols = set(symbols)
+
+        for symbol, iid in list(self.rows.items()):
+
+            if symbol not in current_symbols:
+
+                self.tree.delete(iid)
+                del self.rows[symbol]
+
+        #
+        # Create rows for newly discovered symbols.
+        #
+        for symbol in symbols:
+
+            if symbol in self.rows:
+                continue
+
+            iid = self.tree.insert(
+                "",
+                "end",
+                values=("",) * len(self.COLUMNS),
+                tags=("neutral",),
+            )
+
+            self.rows[symbol] = iid
+
+        #
+        # Single rendering path.
+        #
+        self.refresh_all_rows()
+
+        #
+        # Rank after rendering.
+        #
+        self.schedule_resort()
+
     def update_scanner(self, symbols):
+        """
+        Update the scanner data cache and refresh the table.
+
+        Rendering is handled exclusively by refresh_all_rows().
+        This method does not construct Treeview values directly.
+        """
+
+        if not symbols:
+            return
+
+        self.logger.debug(
+            "Momentum scanner update type: %s",
+            type(symbols),
+        )
+
+        self.logger.debug(
+            "Momentum scanner received %d symbols",
+            len(symbols),
+        )
+
+        #
+        # Update the authoritative scanner data cache.
+        #
+        for symbol, data in symbols.items():
+            self.row_data[symbol] = data
+
+        #
+        # Create Treeview rows for any new symbols.
+        #
+        for symbol in symbols:
+
+            if symbol in self.rows:
+                continue
+
+            iid = self.tree.insert(
+                "",
+                "end",
+                values=("",) * len(self.COLUMNS),
+                tags=("neutral",),
+            )
+
+            self.rows[symbol] = iid
+
+        #
+        # There is now exactly one rendering path.
+        #
+        self.refresh_all_rows()
+
+        #
+        # Keep scanner ranked.
+        #
+        self.schedule_resort()
+
+
+    def old_update_scanner(self, symbols):
 
         if not symbols:
             return
