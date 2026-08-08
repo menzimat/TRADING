@@ -208,7 +208,7 @@ templates:
 
     price:
 
-      basis: ask
+      basis: bid
 
       offset: default
 

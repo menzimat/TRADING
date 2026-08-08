@@ -41,6 +41,8 @@ from trading_app.gui.momentum_table import (
     MomentumTable,
 )
 
+from trading_app.gui.theme import (configure_dark_theme, DARK)
+
 class TradingApplication:
     """
     Main trading GUI.
@@ -119,6 +121,9 @@ class TradingApplication:
         self.root.geometry(
             "1400x800"
         )
+
+        self.style = configure_dark_theme(self.root)
+
         self.logger = logging.getLogger(__name__)
 
         self._build_layout()
@@ -129,6 +134,94 @@ class TradingApplication:
     # -------------------------------------------------------------
     # Construction
     # -------------------------------------------------------------
+
+    def _configure_dark_theme(self):
+        style = ttk.Style(self.root)
+
+        # Use a theme that permits customization.
+        style.theme_use("clam")
+
+        colors = DARK
+
+        self.root.configure(bg=colors["bg"])
+
+        style.configure(
+            ".",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TFrame",
+            background=colors["bg"],
+        )
+
+        style.configure(
+            "TLabel",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TButton",
+            background=colors["surface2"],
+            foreground=colors["fg"],
+            bordercolor=colors["border"],
+        )
+
+        style.map(
+            "TButton",
+            background=[
+                ("active", colors["select_bg"]),
+                ("pressed", colors["select_bg"]),
+            ],
+            foreground=[
+                ("active", colors["select_fg"]),
+            ],
+        )
+
+        style.configure(
+            "TEntry",
+            fieldbackground=colors["entry_bg"],
+            foreground=colors["fg"],
+            insertcolor=colors["fg"],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=colors["entry_bg"],
+            background=colors["surface2"],
+            foreground=colors["fg"],
+            arrowcolor=colors["fg"],
+        )
+
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", colors["entry_bg"]),
+            ],
+            foreground=[
+                ("readonly", colors["fg"]),
+            ],
+        )
+
+        style.configure(
+            "TCheckbutton",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TLabelFrame",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TLabelFrame.Label",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
 
     def _on_key_press(self, event):
 

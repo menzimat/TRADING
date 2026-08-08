@@ -11,6 +11,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 import logging
+from trading_app.gui.theme import DARK
 
 class MomentumTable:
 
@@ -183,8 +184,40 @@ class MomentumTable:
         self.refresh_all_rows()
         self.resort()
 
-
     def resort(self):
+
+            metric = self.sort_selection.get()
+
+            if metric == "Symbol":
+
+                ordered = sorted(
+                    self.row_data.items()
+                )
+
+            else:
+
+                field = self.sort_keys[metric]
+
+                ordered = sorted(
+                    self.row_data.items(),
+                    key=lambda item: item[1].get(field, 0),
+                    reverse=True,
+                )
+
+            for index, (symbol, _) in enumerate(ordered):
+
+                iid = self.rows.get(symbol)
+
+                if iid is not None:
+
+                    self.tree.move(
+                        iid,
+                        "",
+                        index,
+                    )
+
+
+    def old_resort(self):
         metric = self.sort_selection.get()
 
         if metric == "Symbol":
@@ -363,8 +396,23 @@ class MomentumTable:
             columns=self.COLUMNS,
             show="headings",
             height=8,
+            style="Dark.Treeview",
         )
 
+        self.tree.tag_configure(
+            "neutral",
+            foreground=DARK["neutral"],
+        )
+
+        self.tree.tag_configure(
+            "positive",
+            foreground=DARK["positive"],
+        )
+
+        self.tree.tag_configure(
+            "negative",
+            foreground=DARK["negative"],
+        )
 
         headings = {
             "symbol": "Symbol",
@@ -409,6 +457,25 @@ class MomentumTable:
         return self.frame
 
 
+    def _momentum_tag(self, data):
+        """
+        Return the Treeview color tag based on price momentum.
+        """
+
+        try:
+            price_pct = float(data.get("price_pct", 0))
+
+        except (TypeError, ValueError):
+            return "neutral"
+
+        if price_pct > 0:
+            return "positive"
+
+        if price_pct < 0:
+            return "negative"
+
+        return "neutral"
+
     def update_scanner(self, symbols):
 
         if not symbols:
@@ -418,9 +485,8 @@ class MomentumTable:
         self.logger.debug(symbols)
 
         for symbol, data in symbols.items():
-
             self.row_data[symbol] = data
-
+        
             values = (
                 symbol,
                 f"{data['last']:.2f}",
@@ -431,20 +497,19 @@ class MomentumTable:
                 f"{data['price_pct']:.2f}%",
                 f"{data['momentum_score']:.2f}",
             )
-
+            tag = self._momentum_tag(data)
             if symbol in self.rows:
-
                 self.tree.item(
                     self.rows[symbol],
                     values=values,
+                    tags=(tag,),
                 )
-
             else:
-
                 iid = self.tree.insert(
                     "",
                     "end",
                     values=values,
+                    tags=(tag,),
                 )
 
                 self.rows[symbol] = iid
@@ -452,5 +517,4 @@ class MomentumTable:
         #
         # Keep scanner ranked.
         #
-
         self.schedule_resort()
