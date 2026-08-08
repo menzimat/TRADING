@@ -285,51 +285,103 @@ class StateEngine:
                 ),
         )
 
-    async def replace_account_positions(self, account_hash, positions):
-        """Replace one account snapshot and publish changed aggregate quantities."""
+    async def replace_account_positions(
+        self,
+        account_hash,
+        positions,
+    ):
+        """
+        Replace the complete position snapshot for one account.
 
-        previous = self.state.positions_by_account.get(account_hash, {})
+        The positions supplied by Schwab represent the complete current
+        position set for this account.
+
+        Symbols that existed in the previous snapshot but are absent from
+        the new snapshot are explicitly reported with quantity zero so
+        consumers such as QuoteTable can clear stale positions.
+        """
+
+        account_hash = str(account_hash)
+
+        #
+        # Previous position snapshot for THIS account only.
+        #
+        previous = self.state.positions_by_account.get(
+            account_hash,
+            {},
+        )
+
+        #
+        # Build the new position snapshot for THIS account.
+        #
         current = {}
+
         for position in positions:
+
             symbol = position["symbol"].upper()
+
             current[symbol] = PositionState(
                 symbol=symbol,
-                quantity=int(position.get("quantity", 0)),
-                average_price=float(position.get("average_price", 0.0)),
-            )
-
-        self.state.positions_by_account[account_hash] = current
-        quantities = {}
-        for symbol in set(previous) | set(current):
-            matching_positions = [
-                account_positions[symbol]
-                for account_positions in self.state.positions_by_account.values()
-                if symbol in account_positions
-            ]
-            quantity = sum(position.quantity for position in matching_positions)
-            self.state.positions[symbol] = PositionState(
-                symbol=symbol,
-                quantity=quantity,
-                average_price=(
-                    matching_positions[0].average_price
-                    if matching_positions else 0.0
+                quantity=int(
+                    position.get(
+                        "quantity",
+                        0,
+                    )
+                ),
+                average_price=float(
+                    position.get(
+                        "average_price",
+                        0.0,
+                    )
                 ),
             )
+
+        #
+        # Replace the account's complete position snapshot.
+        #
+        self.state.positions_by_account[account_hash] = current
+
+        #
+        # Determine every symbol whose displayed position may have
+        # changed for THIS account.
+        #
+        affected_symbols = set(previous) | set(current)
+
+        quantities = {}
+
+        for symbol in affected_symbols:
+
+            if symbol in current:
+
+                quantity = current[symbol].quantity
+
+            else:
+
+                #
+                # Symbol was present previously but is no longer
+                # present in the complete Schwab account snapshot.
+                #
+                # Therefore its position for THIS ACCOUNT is now zero.
+                #
+                quantity = 0
+
             quantities[symbol] = quantity
 
+        #
+        # Publish the account-specific position changes.
+        #
         if quantities:
+
             await self.bus.publish_system(
                 SystemEvent(
                     name="POSITIONS_UPDATED",
                     payload={
                         "account_hash": account_hash,
-                        "quantities": {
-                            symbol: position.quantity
-                            for symbol, position in current.items()
-                        },
+                        "quantities": quantities,
                     },
                 )
             )
+
 
     def update_order(
         self,
