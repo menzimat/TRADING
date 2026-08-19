@@ -17,13 +17,17 @@ class DummyStreamer:
         return True
 
 
+class DummyStateEngine:
+    scanner_state = object()
+
+
 class RuntimeSymbolSubscriptionTests(unittest.TestCase):
     def make_runtime(self, streamer):
         runtime = Runtime(
             bus=None,
             streamer=streamer,
             command_processor=None,
-            state_engine=None,
+            state_engine=DummyStateEngine(),
         )
         runtime.running = True
         runtime.loop = object()
@@ -74,6 +78,7 @@ class SchwabStreamerSubscriptionTests(unittest.IsolatedAsyncioTestCase):
     def make_streamer(self):
         streamer = SchwabStreamer.__new__(SchwabStreamer)
         streamer.symbols = ["AAPL"]
+        streamer.symbol_set = {"AAPL"}
         streamer.stream_client = DummyStreamClient()
         streamer._subscribed_symbols = {"AAPL"}
         streamer._subscription_lock = asyncio.Lock()

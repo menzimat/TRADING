@@ -95,7 +95,7 @@ class Engine:
         #
 
         self.state_engine = StateEngine(
-            self.bus
+            self.bus, config=self.config,
         )
 
 
@@ -177,6 +177,10 @@ class Engine:
 
             on_disconnect= self.stop_backend,
 
+            on_reload_symbols= self.runtime.reload_symbol_files,
+
+            on_exit= self.shutdown,
+
             on_add_symbol= self.runtime.add_symbol,
 
             on_remove_symbol= self.runtime.remove_symbol,
@@ -229,17 +233,20 @@ class Engine:
 
     def start_backend(self):
         print("ENGINE: starting backend")
-        self.runtime.start()
+        self.runtime.connect()
         self.gui.attach_hotkey_manager(self.hotkey_manager)
 
     def stop_backend(self):
 
-        self.runtime.stop()
+        self.runtime.disconnect()
 
 
 
     def shutdown(self):
 
+        self.streamer.save_scanner_symbols(
+            self.gui.quote_table.get_symbols()
+        )
         self.runtime.stop()
 
         self.gui.shutdown()

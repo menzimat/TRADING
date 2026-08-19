@@ -828,8 +828,8 @@ class TradeInstructionPanel:
         return self.symbol_var.get()
 
     def set_accounts(self, accounts, default_acct_number=None):
-        print("PANEL set_accounts", accounts)
-        print("PANEL default_acct_number", default_acct_number)
+#       print("PANEL set_accounts", accounts)
+#       print("PANEL default_acct_number", default_acct_number)
         self.accounts = accounts
 
         values = [

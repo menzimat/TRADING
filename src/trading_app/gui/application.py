@@ -37,6 +37,12 @@ from trading_app.gui.trade_instruction_panel import (
     TradeInstructionPanel,
 )
 
+from trading_app.gui.momentum_table import (
+    MomentumTable,
+)
+
+from trading_app.gui.theme import (configure_dark_theme, DARK)
+
 class TradingApplication:
     """
     Main trading GUI.
@@ -76,6 +82,8 @@ class TradingApplication:
         on_instruction_submit=None,
         on_connect=None,
         on_disconnect=None,
+        on_reload_symbols=None,
+        on_exit=None,
         on_add_symbol=None,
         on_remove_symbol=None,
         resolve_instruction=None,
@@ -96,6 +104,8 @@ class TradingApplication:
         self.on_instruction_submit = (on_instruction_submit)
         self.on_connect = (on_connect)
         self.on_disconnect = (on_disconnect)
+        self.on_reload_symbols = on_reload_symbols
+        self.on_exit = on_exit
         self.on_add_symbol = on_add_symbol
         self.on_remove_symbol = on_remove_symbol
         self.resolve_instruction = resolve_instruction
@@ -115,16 +125,108 @@ class TradingApplication:
         self.root.geometry(
             "1400x800"
         )
+
+        self.style = configure_dark_theme(self.root)
+
         self.logger = logging.getLogger(__name__)
 
         self._build_layout()
 
         self._build_menu()
+        self.root.protocol("WM_DELETE_WINDOW", self._exit)
 
 
     # -------------------------------------------------------------
     # Construction
     # -------------------------------------------------------------
+
+    def _configure_dark_theme(self):
+        style = ttk.Style(self.root)
+
+        # Use a theme that permits customization.
+        style.theme_use("clam")
+
+        colors = DARK
+
+        self.root.configure(bg=colors["bg"])
+
+        style.configure(
+            ".",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TFrame",
+            background=colors["bg"],
+        )
+
+        style.configure(
+            "TLabel",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TButton",
+            background=colors["surface2"],
+            foreground=colors["fg"],
+            bordercolor=colors["border"],
+        )
+
+        style.map(
+            "TButton",
+            background=[
+                ("active", colors["select_bg"]),
+                ("pressed", colors["select_bg"]),
+            ],
+            foreground=[
+                ("active", colors["select_fg"]),
+            ],
+        )
+
+        style.configure(
+            "TEntry",
+            fieldbackground=colors["entry_bg"],
+            foreground=colors["fg"],
+            insertcolor=colors["fg"],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=colors["entry_bg"],
+            background=colors["surface2"],
+            foreground=colors["fg"],
+            arrowcolor=colors["fg"],
+        )
+
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", colors["entry_bg"]),
+            ],
+            foreground=[
+                ("readonly", colors["fg"]),
+            ],
+        )
+
+        style.configure(
+            "TCheckbutton",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TLabelFrame",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
+
+        style.configure(
+            "TLabelFrame.Label",
+            background=colors["bg"],
+            foreground=colors["fg"],
+        )
 
     def _on_key_press(self, event):
 
@@ -202,13 +304,40 @@ class TradingApplication:
         # Quote table
         #
 
-        self.quote_table = QuoteTable(
-            main,
-            on_select=
-                self._symbol_selected,
-            on_delete=
-                self._remove_symbol,
+        
+
+        left = ttk.Frame(main)
+
+        left.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
         )
+
+
+        left.rowconfigure(
+            0,
+            weight=3,
+        )
+
+        left.rowconfigure(
+            1,
+            weight=1,
+        )
+
+
+        left.columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.quote_table = QuoteTable(
+                    left,
+                    on_select=
+                        self._symbol_selected,
+                    on_delete=
+                        self._remove_symbol,
+                )
 
         self.quote_table.widget().grid(
             row=0,
@@ -216,6 +345,17 @@ class TradingApplication:
             sticky="nsew",
         )
 
+        self.momentum_table = MomentumTable(
+            left
+        )
+
+
+        self.momentum_table.widget().grid(
+            row=1,
+            column=0,
+            sticky="nsew",
+            pady=5,
+        )
 
         #
         # Order panel
@@ -286,13 +426,16 @@ class TradingApplication:
             on_flatten_position=self._flatten_position,
 
             on_exit=
-                self.shutdown,
+                self._exit,
 
             on_about=
                 self._about,
 
             on_refresh=
                 self._refresh_positions,
+
+            on_reload_symbols=
+                self._reload_symbols,
         )
 
 
@@ -302,33 +445,30 @@ class TradingApplication:
 
     def _update_execution_indicator(self, enabled):
         if enabled:
-            self.logger.info("***** SIMULATION MODE ENABLED *****\n"
+            self.logger.debug("***** SIMULATION MODE ENABLED *****\n"
                 "Orders will NOT be transmitted to Schwab.")
 
             self.status_bar.set_execution_mode(enabled)
-            print(f"SIMULATION ENABLED: {enabled}")
+            self.logger.debug(f"SIMULATION ENABLED: {enabled}")
         else:
-            print(f"LIVE TRADING ENABLED: {enabled}")
-            self.logger.info(f"***** LIVE TRADING ENABLED {enabled}*****")
+            self.logger.debug(f"***** LIVE TRADING ENABLED {enabled}*****")
             if not messagebox.askyesno(
                 "Enable Live Trading",
                 "Simulation Mode will be disabled.\n\n"
                 "REAL orders will be sent to Schwab.\n\n"
                 "Continue?"
             ):
-                print(f"LIVE TRADING REJECTED ?: {enabled}")
-                self.logger.info(f"***** LIVE TRADING REJECTED ? {enabled}*****")
+                self.logger.debug(f"***** LIVE TRADING REJECTED ? {enabled}*****")
                 self.status_bar.set_execution_mode(tk.BooleanVar(value=True))
                 return
 
-            print(f"LIVE TRADING ENABLED2: {enabled}")
-            self.logger.info("***** LIVE TRADING ENABLED2 *****")
+            self.logger.debug("***** LIVE TRADING ENABLED2 *****")
             self.status_bar.set_execution_mode(enabled)
             
 
     def _simulation_changed(self, enabled):
 
-        print(f"_simulation_changed: {enabled}")
+        self.logger.debug(f"_simulation_changed: {enabled}")
         if self.on_simulation_changed:
             self.on_simulation_changed(enabled)
 
@@ -341,20 +481,15 @@ class TradingApplication:
         accounts,
         default_account_number,
     ):
-        print("APPLICATION set_accounts", accounts)
-        self.trade_instruction_panel.set_accounts(
-            accounts, default_account_number
-        )
+        self.logger.debug("APPLICATION set_accounts: %s", accounts)
+        self.trade_instruction_panel.set_accounts(accounts, default_account_number)
 
     def _symbol_selected(
         self,
         symbol,
     ):
 
-        print(
-            "APPLICATION: selected symbol",
-            symbol,
-        )
+        self.logger.debug("APPLICATION: selected symbol: %s", symbol,)
 
         #
         # Change panel context first
@@ -374,11 +509,7 @@ class TradingApplication:
             quote = self.on_get_quote(
                 symbol
             )
-            print(
-                "APPLICATION cached quote:",
-                quote,
-                type(quote),
-            )
+            self.logger.debug("APPLICATION cached quote: %s : %s", quote, type(quote),)
 
             if quote is not None:
 
@@ -474,6 +605,16 @@ class TradingApplication:
 
             self.on_disconnect()
 
+    def _reload_symbols(self):
+        if self.on_reload_symbols:
+            self.on_reload_symbols()
+
+    def _exit(self):
+        if self.on_exit:
+            self.on_exit()
+        else:
+            self.shutdown()
+
 
     def _flatten_position(self):
 
@@ -518,12 +659,32 @@ class TradingApplication:
     # Public API used by runtime
     # -------------------------------------------------------------
 
+    def update_scanner(
+        self,
+        scanner_data,
+    ):
+        """
+        Update momentum scanner display.
+
+        Called from runtime after SCANNER_UPDATED 
+        event.
+        """
+        self.logger.debug(
+                "GUI received %d scanner symbols",
+                len(scanner_data),
+            )
+        
+        self.momentum_table.update_scanner(
+            scanner_data
+        )
+
+
     def update_quote(
         self,
         symbol,
         quote,
     ):
-        print("GUI:", symbol)
+        self.logger.debug("GUI: %s", symbol)
         self.quote_table.update_quote(
             symbol,
             quote,
@@ -551,6 +712,42 @@ class TradingApplication:
                 symbol,
                 quantity,
             )
+
+    def replace_symbols(self, symbols, positions=None):
+        """Rebuild QuoteTable from current complete quotes after reload."""
+
+        positions = (
+            dict(self.quote_table.position_cache)
+            if positions is None
+            else dict(positions)
+        )
+        existing_quotes = dict(self.quote_table.row_cache)
+        self.quote_table.clear()
+        self.quote_table.position_cache.update(positions)
+
+        # Position symbols must remain visible/actionable even when they were
+        # not in either ticker file.  Prefer StateEngine's latest quote cache;
+        # the pre-reload row cache covers the short event-queue race before a
+        # fresh streaming update is delivered.
+        refreshed_symbols = list(dict.fromkeys([*symbols, *positions]))
+        for symbol in refreshed_symbols:
+            quote = self.get_quote(symbol) if self.get_quote else None
+            quote = quote or existing_quotes.get(symbol)
+            if self._has_complete_quote(quote):
+                self.quote_table.update_quote(symbol, quote)
+
+        self.trade_instruction_panel.set_symbol(None)
+
+    @staticmethod
+    def _has_complete_quote(quote):
+        if quote is None:
+            return False
+
+        for field in ("last", "bid", "ask", "volume"):
+            value = quote.get(field) if isinstance(quote, dict) else getattr(quote, field, None)
+            if value is None or value == "":
+                return False
+        return True
 
     def set_connection_status(
         self,

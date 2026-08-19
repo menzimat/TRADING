@@ -13,13 +13,17 @@ class DummyGui:
         self.updated_quotes.append((symbol, payload))
 
 
+class DummyStateEngine:
+    scanner_state = object()
+
+
 class RuntimeGuiEventTests(unittest.TestCase):
     def test_order_submission_event_does_not_trigger_quote_update(self):
         runtime = Runtime(
             bus=None,
             streamer=None,
             command_processor=None,
-            state_engine=None,
+            state_engine=DummyStateEngine(),
         )
         gui = DummyGui()
         runtime.gui = gui

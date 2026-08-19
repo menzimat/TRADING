@@ -2,6 +2,7 @@ import asyncio
 import unittest
 
 from trading_app.bus import EventType, MarketEvent
+from trading_app.config import AppConfig
 from trading_app.engine.state_engine import StateEngine
 
 
@@ -16,7 +17,7 @@ class DummyBus:
 class PositionSnapshotTests(unittest.TestCase):
     def test_account_snapshots_aggregate_positions_and_clear_sold_symbols(self):
         bus = DummyBus()
-        engine = StateEngine(bus)
+        engine = StateEngine(bus, AppConfig.load())
 
         self._snapshot(engine, "one", [{"symbol": "AAPL", "quantity": 10}])
         self._snapshot(engine, "two", [{"symbol": "AAPL", "quantity": 5}])
@@ -29,7 +30,7 @@ class PositionSnapshotTests(unittest.TestCase):
         self.assertEqual(engine.get_position("AAPL").quantity, 0)
         self.assertEqual(
             bus.system_events[-1].payload,
-            {"account_hash": "two", "quantities": {}},
+            {"account_hash": "two", "quantities": {"AAPL": 0}},
         )
 
     @staticmethod

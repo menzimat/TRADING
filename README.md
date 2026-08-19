@@ -1,5 +1,6 @@
 source ~/p39env/bin/activate
 cd ~/Projects/python/SINGLE_TRADING_APP
+cd ~/Projects/python/TRADING_SCANNER/TRADING
 python -m compileall src/trading_app
 pip install -e .
 

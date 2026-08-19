@@ -24,7 +24,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, Optional, Any
-
+from trading_app.gui.theme import ( configure_tk_menu, DARK)
 
 class QuoteTable:
     """
@@ -111,9 +111,15 @@ class QuoteTable:
             columns=self.COLUMNS,
             show="headings",
             selectmode="browse",
+            style="Dark.Treeview",
         )
 
-        self.context_menu = tk.Menu(self.tree, tearoff=False)
+        self.context_menu = configure_tk_menu(
+            self.tree,
+            tearoff=False,
+        )
+
+        
         self.context_menu.add_command(
             label="Delete",
             command=self._delete_context_symbol,
@@ -148,6 +154,24 @@ class QuoteTable:
             )
 
     def _configure_styles(self):
+    
+            self.tree.tag_configure(
+                "positive",
+                foreground=DARK["positive"],
+            )
+
+            self.tree.tag_configure(
+                "negative",
+                foreground=DARK["negative"],
+            )
+
+            self.tree.tag_configure(
+                "neutral",
+                foreground=DARK["neutral"],
+            )
+    
+
+    def _old_configure_styles(self):
 
         self.tree.tag_configure(
             "positive",
@@ -162,6 +186,56 @@ class QuoteTable:
         self.tree.tag_configure(
             "neutral",
             foreground="black",
+        )
+
+    def _new_configure_styles(self):
+        style = ttk.Style(self.parent)
+
+        style.configure(
+            "Dark.Treeview",
+            background=DARK["surface"],
+            foreground=DARK["fg"],
+            fieldbackground=DARK["surface"],
+            rowheight=24,
+        )
+
+        style.map(
+            "Dark.Treeview",
+            background=[
+                ("selected", DARK["select_bg"]),
+            ],
+            foreground=[
+                ("selected", DARK["select_fg"]),
+            ],
+        )
+
+        style.configure(
+            "Dark.Treeview.Heading",
+            background=DARK["surface2"],
+            foreground=DARK["fg"],
+            relief="flat",
+        )
+
+        style.map(
+            "Dark.Treeview.Heading",
+            background=[
+                ("active", DARK["select_bg"]),
+            ],
+        )
+
+        self.tree.tag_configure(
+            "positive",
+            foreground=DARK["positive"],
+        )
+
+        self.tree.tag_configure(
+            "negative",
+            foreground=DARK["negative"],
+        )
+
+        self.tree.tag_configure(
+            "neutral",
+            foreground=DARK["neutral"],
         )
 
     def _bind_events(self):
@@ -239,6 +313,13 @@ class QuoteTable:
 
             self.symbol_rows[symbol] = iid
 
+    def _update_symbol_color(self, row_id):
+        symbol = self.tree.item(row_id, "text")
+        color = "#FFFFFF"  # White for neutral
+        if symbol in self.symbol_rows:
+            color = "#FFFFFF"  # White for neutral
+        self.tree.item(row_id, values=(symbol, self.get_quote(symbol), color))
+
     def add_symbol(
         self,
         symbol: str,
@@ -262,6 +343,8 @@ class QuoteTable:
             tags=("neutral",),
         )
         self.symbol_rows[symbol] = iid
+        self._update_symbol_color(iid)
+
         return True
 
 
@@ -338,6 +421,14 @@ class QuoteTable:
         self.position_cache.clear()
         self.symbol_rows.clear()
         self.suppressed_symbols.clear()
+
+    def get_symbols(self) -> list[str]:
+        """Return QuoteTable symbols in their current visual order."""
+
+        return [
+            self.tree.item(iid, "values")[0]
+            for iid in self.tree.get_children()
+        ]
 
 
     def get_quote(
@@ -454,17 +545,15 @@ class QuoteTable:
                 column,
             )
 
-            rows.append(
-                (
-                    self._sortable_value(value),
-                    iid,
-                )
-            )
+            rows.append((self._sortable_value(column, value), iid))
 
 
+        # Keep incomplete numerical rows at the end in either sort direction.
         rows.sort(
-            reverse=self.sort_reverse
+            key=lambda row: row[0][1],
+            reverse=self.sort_reverse,
         )
+        rows.sort(key=lambda row: row[0][0])
 
 
         for index, (_, iid) in enumerate(rows):
@@ -553,16 +642,24 @@ class QuoteTable:
 
     @staticmethod
     def _sortable_value(
+        column,
         value,
     ):
+        """Return same-type keys even if an incomplete row reaches the table."""
+
+        if column == "symbol":
+            return (False, str(value).lower())
 
         try:
-            return float(
-                str(value)
-                .replace("%", "")
-                .replace(",", "")
+            return (
+                False,
+                float(
+                    str(value)
+                    .replace("%", "")
+                    .replace(",", "")
+                ),
             )
-
-        except ValueError:
-
-            return str(value).lower()
+        except (TypeError, ValueError):
+            # Empty/unparseable numerical values sort after quoted values on
+            # ascending sorts and never cause float/string comparisons.
+            return (True, 0.0)

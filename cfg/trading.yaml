@@ -22,6 +22,7 @@
 # ============================================================
 
 
+
 defaults:
 
   side: BUY
@@ -207,7 +208,7 @@ templates:
 
     price:
 
-      basis: ask
+      basis: bid
 
       offset: default
 
@@ -370,3 +371,5 @@ templates:
   refresh_quotes:
 
     action: REFRESH_QUOTES
+
+

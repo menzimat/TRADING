@@ -24,6 +24,7 @@ import inspect
 import logging
 import json
 from pathlib import Path
+from contextlib import suppress
 from trading_app.models.broker_account import BrokerAccount
 from schwab.streaming import StreamClient
 
@@ -57,6 +58,7 @@ class SchwabStreamer:
         self.state_engine = state_engine
 
         self.running = False
+        self._connected = False
 
         self.stream_client = None
 
@@ -64,10 +66,82 @@ class SchwabStreamer:
         self.account_hashes = []
 
         self.symbols = self.load_symbols()
+        self.symbol_set = set(self.symbols)
+
         self._subscribed_symbols = set()
         self._subscription_lock = asyncio.Lock()
         self._subscriptions_ready = False
 
+        # Scanner file symbols that are already in the main watchlist are
+        # deliberately omitted.  The two lists share one quote subscription
+        # set, and scanner_tickers.txt is persisted as the supplemental list.
+        self.scanner_symbols = [
+            symbol for symbol in self.load_scanner_symbols()
+            if symbol not in self.symbol_set
+        ]
+        self.scanner_symbol_set = set(self.scanner_symbols)
+
+        for symbol in self.scanner_symbols:
+            self.state_engine.scanner_state.add_watch_symbol(symbol)
+
+        self.movers_task = None
+
+        momentum = getattr(self.state_engine.config, "momentum", None)
+
+#        if momentum:
+#           print(f"momentum: {momentum}")
+
+        if momentum["enabled"]:
+            self.use_schwab_movers = (
+                momentum["use_schwab_movers"]
+                if momentum
+                else False
+            )
+
+            self.movers_poll_interval = (
+                momentum["movers_poll_interval"]
+                if momentum
+                else 6
+            )
+
+            self.movers_frequency = (
+                momentum["movers_frequency"]
+                if momentum
+                else 5
+            )
+
+            self.max_movers = (
+                momentum["max_movers"]
+                if momentum
+                else 10
+            )
+
+            self.merge_scanner_file = (
+                momentum["merge_scanner_file"]
+                if momentum
+                else True
+            )
+
+            self.min_mover_price = (
+                momentum["min_mover_price"]
+                if momentum
+                else 0.7
+            )
+
+            self.max_mover_price = (
+                momentum["max_mover_price"]
+                if momentum
+                else 20.0
+            )
+
+            self.min_volume = (
+                momentum["min_volume"]
+                if momentum
+                else 5000000
+            )
+
+
+            self.base_scanner_symbols = set(self.scanner_symbols)
 
 
     # ======================================================
@@ -75,50 +149,163 @@ class SchwabStreamer:
     # ======================================================
 
     def load_symbols(self):
+        return self.load_symbol_file("tickers.txt")
 
-        path = Path(
-            "cfg/tickers.txt"
-        )
+    def load_scanner_symbols(self):
+        return self.load_symbol_file("scanner_tickers.txt")
 
+    def load_symbol_file(self, filename: str) -> list[str]:
+
+        path = Path("cfg") / filename
 
         if not path.exists():
-
-            logger.warning(
-                "No ticker file found"
-            )
-
+            logger.warning("%s not found", path)
             return []
 
-
         return [
-
             line.strip().upper()
-
             for line in path.read_text().splitlines()
-
             if line.strip()
-
         ]
+
+    @staticmethod
+    def _unique_symbols(symbols) -> list[str]:
+        """Normalize symbols while retaining their order."""
+
+        seen = set()
+        normalized = []
+        for symbol in symbols:
+            symbol = symbol.strip().upper()
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                normalized.append(symbol)
+        return normalized
+
+    def all_symbols(self) -> list[str]:
+        """Return the complete displayed/subscribed symbol set in order."""
+
+        return self._unique_symbols(self.symbols + self.scanner_symbols)
+
+    def save_scanner_symbols(self, symbols) -> list[str]:
+        """Persist supplemental QuoteTable symbols without duplicating tickers.
+
+        ``tickers.txt`` remains the primary watchlist.  Every displayed symbol
+        not already present there is written to ``scanner_tickers.txt``.
+        """
+
+        primary_symbols = set(self.load_symbols())
+        scanner_symbols = [
+            symbol for symbol in self._unique_symbols(symbols)
+            if symbol not in primary_symbols
+        ]
+        path = Path("cfg") / "scanner_tickers.txt"
+        contents = "\n".join(scanner_symbols)
+        path.write_text(f"{contents}\n" if contents else "")
+        return scanner_symbols
+
+    async def reload_symbol_files(self, position_symbols=()) -> list[str]:
+        """Replace the live watchlist with ticker files and open positions.
+
+        Open positions are always retained in the market-data subscription set
+        so their QuoteTable rows remain actionable after a reload.
+        """
+
+        primary_symbols = self._unique_symbols(
+            self.load_symbols() + list(position_symbols)
+        )
+        primary_set = set(primary_symbols)
+        scanner_symbols = [
+            symbol for symbol in self._unique_symbols(self.load_scanner_symbols())
+            if symbol not in primary_set
+        ]
+        desired_symbols = primary_symbols + scanner_symbols
+        desired_set = set(desired_symbols)
+
+        if self._subscriptions_ready:
+            async with self._subscription_lock:
+                removed = self._subscribed_symbols - desired_set
+                if removed:
+                    await self.stream_client.level_one_equity_unsubs(sorted(removed))
+                added = desired_set - self._subscribed_symbols
+                if added:
+                    await self.stream_client.level_one_equity_add(sorted(added))
+                self._subscribed_symbols = desired_set
+
+        self.symbols = primary_symbols
+        self.symbol_set = primary_set
+        self.scanner_symbols = scanner_symbols
+        self.scanner_symbol_set = set(scanner_symbols)
+        self.base_scanner_symbols = set(scanner_symbols)
+        self.state_engine.scanner_state.set_watch_symbols(self.scanner_symbol_set)
+        return desired_symbols
 
     def has_symbol(self, symbol: str) -> bool:
         """Return whether a symbol is already on the streamer watchlist."""
 
         return symbol.strip().upper() in self.symbols
 
+    async def add_scanner_symbol(self, symbol: str):
+
+        symbol = symbol.upper().strip()
+
+        logger.debug(
+            "SCANNER ADD: %s  count=%d",
+            symbol,
+            len(self.scanner_symbols),
+        )
+
+        if symbol in self.scanner_symbol_set:
+            return False
+
+        self.scanner_symbol_set.add(symbol)
+        self.scanner_symbols.append(symbol)
+        self.state_engine.scanner_state.add_candidate(symbol)
+
+        if self._subscriptions_ready:
+            await self._subscribe_symbols([symbol], add=True)
+
+        return True
+
     async def add_symbol(self, symbol: str) -> bool:
         """Add one symbol to the watchlist and subscribe it when connected."""
 
+        logger.info(
+            "QUOTE ADD: %s  count=%d",
+            symbol,
+            len(self.symbols),
+        )
         symbol = symbol.strip().upper()
 
         if not symbol or symbol == "-" or self.has_symbol(symbol):
             return False
-
+        self.symbol_set.add(symbol)
         self.symbols.append(symbol)
 
         if self._subscriptions_ready:
             await self._subscribe_symbols([symbol], add=True)
 
         return True
+
+    async def remove_scanner_symbol(self, symbol: str) -> bool:
+            """Remove one symbol from the scanner list and unsubscribe when live."""
+
+            symbol = symbol.strip().upper()
+
+            if not symbol or symbol not in self.scanner_symbols:
+                return False
+            
+            self.scanner_symbol_set.remove(symbol)
+            self.scanner_symbols.remove(symbol)
+            self.state_engine.scanner_state.remove_candidate(symbol)
+
+            if self._subscriptions_ready:
+                async with self._subscription_lock:
+                    await self.stream_client.level_one_equity_unsubs([symbol])
+                    self._subscribed_symbols.discard(symbol)
+                    logger.info("Unsubscribed: %s", symbol)
+
+            return True
+
 
     async def remove_symbol(self, symbol: str) -> bool:
         """Remove one symbol from the watchlist and unsubscribe when live."""
@@ -128,13 +315,14 @@ class SchwabStreamer:
         if not symbol or symbol not in self.symbols:
             return False
 
+        self.symbol_set.remove(symbol)
         self.symbols.remove(symbol)
 
         if self._subscriptions_ready:
             async with self._subscription_lock:
                 await self.stream_client.level_one_equity_unsubs([symbol])
                 self._subscribed_symbols.discard(symbol)
-                logger.info("Unsubscribed: %s", symbol)
+                logger.debug("Unsubscribed: %s", symbol)
 
         return True
 
@@ -160,8 +348,123 @@ class SchwabStreamer:
             else:
                 await self.stream_client.level_one_equity_subs(pending)
             self._subscribed_symbols.update(pending)
-            logger.info("Subscribed: %s", pending)
+            logger.debug("Subscribed: %s", pending)
 
+
+    def _frequency_enum(self):
+
+        freq = self.client.Movers.Frequency
+
+        mapping = {
+            0: freq.ZERO,
+            1: freq.ONE,
+            5: freq.FIVE,
+            10: freq.TEN,
+            30: freq.THIRTY,
+            60: freq.SIXTY,
+        }
+
+        return mapping.get(
+            self.movers_frequency,
+            freq.FIVE,
+        )
+
+
+    async def get_equity_movers(self):
+
+        response = await self.client.get_movers(
+            self.client.Movers.Index.EQUITY_ALL,
+            sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+            frequency=self._frequency_enum(),)
+
+        response.raise_for_status()
+        payload = response.json()
+        symbols = []
+
+        logger.debug("MOVERS PAYLOAD TYPE: %s", type(payload))
+        logger.debug("MOVERS PAYLOAD: %s", json.dumps(payload, indent=2))
+
+        if isinstance(payload, list):
+            movers = payload
+        elif isinstance(payload, dict):
+            movers = None
+
+            for value in payload.values():
+                if (isinstance(value, list) and value and isinstance(value[0], dict)):
+                    movers = value
+                    break
+            if movers is None:
+                movers = []
+        else:
+            movers = []
+
+        for item in movers:
+            symbol = item.get("symbol")
+            if symbol:
+                price = item.get("lastPrice")
+
+                if price is None:
+                    continue
+
+                if price < self.min_mover_price:
+                    continue
+
+                if self.max_mover_price is not None and price > self.max_mover_price:
+                    continue
+                symbols.append(symbol.upper())
+
+        return symbols[: self.max_movers]
+
+
+    async def update_mover_symbols(self, movers):
+
+        desired = set(movers)
+
+        logger.debug(
+            "Mover update: %s",
+            sorted(desired),
+        )
+
+        if self.merge_scanner_file:
+            desired |= self.base_scanner_symbols
+            self.state_engine.scanner_state.set_watch_symbols(desired)
+
+        current = set(self.scanner_symbols)
+
+        for symbol in desired - current:
+            await self.add_scanner_symbol(symbol)
+            self.state_engine.scanner_state.add_watch_symbol(symbol)
+            
+
+        #
+        # Do NOT remove symbols for now. Let the list grow.
+        #
+        for symbol in current - desired:
+            if symbol not in self.base_scanner_symbols:
+                await self.remove_scanner_symbol(symbol)
+                self.state_engine.scanner_state.remove_watch_symbol(symbol)
+
+
+    async def movers_poll_loop(self):
+
+        logger.debug(
+            "Schwab movers polling every %d seconds",
+            self.movers_poll_interval,
+        )
+
+        while self.running:
+            try:
+                movers = await self.get_equity_movers()
+                await self.update_mover_symbols(movers)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Unable to refresh Schwab movers"
+                )
+            await asyncio.sleep(
+                self.movers_poll_interval
+            )
 
 
     # ======================================================
@@ -222,34 +525,18 @@ class SchwabStreamer:
 
     async def connect(self):
 
-        logger.info(
-            "Creating Schwab StreamClient"
-        )
+        logger.debug("Creating Schwab StreamClient")
 
+        accounts = await (self.client.get_account_numbers())
 
-        accounts = await (
-            self.client
-            .get_account_numbers()
-        )
-
-
-        account_data = (
-            accounts.json()
-        )
-
+        account_data = (accounts.json())
 
         if not account_data:
-
-            raise RuntimeError(
-                "No Schwab accounts returned"
-            )
+            raise RuntimeError("No Schwab accounts returned")
 
         broker_accounts = []
-
         for acct in accounts.json():
-
             number = acct["accountNumber"]
-
             broker_accounts.append(
                 BrokerAccount(
                     display_name=f"Acct {number[-4:]}",
@@ -258,65 +545,53 @@ class SchwabStreamer:
                 )
             )
         
-        
-        account_hash = (
-            account_data[0]["hashValue"]
-        )
+        account_hash = (account_data[0]["hashValue"])
 
         self.account_hash = account_hash
         self.account_hashes = [acct["hashValue"] for acct in account_data]
 
+        logger.debug(f"Using account hash {account_hash}")
+        logger.debug(f"ACCOUNT DATA:", account_data)
 
-        logger.info(
-            f"Using account hash {account_hash}"
-        )
-        print(f"ACCOUNT DATA:", account_data)
+        self.stream_client = StreamClient(self.client, account_id=account_hash,)
 
-
-        self.stream_client = StreamClient(
-            self.client,
-            account_id=account_hash,
-        )
-
-
-        self.stream_client.add_level_one_equity_handler(
-            self.handle_quote
-        )
-        self.stream_client.add_account_activity_handler(
-            self.handle_account_activity
-        )
+        self.stream_client.add_level_one_equity_handler(self.handle_quote)
+        self.stream_client.add_account_activity_handler(self.handle_account_activity)
 
         try:
             await self.stream_client.login()
         except Exception as e:
-            print(f"LOGIN Exception:", e)
+            logger.exception(f"LOGIN Exception:", e)
             raise
         
         await self.stream_client.account_activity_sub()
 
+        self._connected = True
+
         self._subscribed_symbols.clear()
         self._subscriptions_ready = False
-
-
-        logger.info(
-            "Schwab websocket connected"
-        )
-
+        logger.debug("Schwab websocket connected")
 
         await self.refresh_positions()
 
-        if self.symbols:
-            await self._subscribe_symbols(self.symbols)
+        subscription_symbols = sorted(self.symbol_set | self.scanner_symbol_set)
+
+        if subscription_symbols:
+            await self._subscribe_symbols(subscription_symbols)
+
         self._subscriptions_ready = True
+
+        if (self.use_schwab_movers and self.movers_task is None):
+                    self.movers_task = asyncio.create_task(self.movers_poll_loop())
+
         try:
-            print("Publishing accounts:", broker_accounts)
+            logger.debug("Publishing ACCOUNTS_LOADED:", broker_accounts)
             await self.bus.publish_system(
                 SystemEvent(
                     name="ACCOUNTS_LOADED",
                     payload=broker_accounts,
                 )
             )
-            print("Accounts event published")
         except Exception:
             logger.exception("Failed publishing ACCOUNTS_LOADED")
 
@@ -336,13 +611,13 @@ class SchwabStreamer:
         self,
         message,
     ):
-        print(message)
+        logger.debug(message)
         for record in message["content"]:
             quote = self.parse_quote(record)
             if quote is None:
                 continue
 
-            print("STREAMER:", quote)
+            logger.debug("STREAMER:", quote)
             await self.bus.publish_market(
                 MarketEvent(
                     event=EventType.QUOTES,
@@ -366,17 +641,24 @@ class SchwabStreamer:
 
     async def refresh_positions(self, account_hash=None):
         if self.state_engine is None or self.client is None:
-            return
+            return {}
 
         account_hashes = [account_hash] if account_hash else self.account_hashes
         if not account_hashes and self.account_hash:
             account_hashes = [self.account_hash]
 
+        snapshots = {}
         for account_hash in account_hashes:
-            await self._refresh_account_positions(account_hash)
+            positions = await self._refresh_account_positions(
+                account_hash
+            )
+            if positions is not None:
+                snapshots[account_hash] = positions
+        return snapshots
 
     async def _refresh_account_positions(self, account_hash):
         try:
+            #TODO: CUSTOMIZE QUERY FIELDS HERE using input parameter
             fields = None
             if hasattr(self.client, "Account") and hasattr(self.client.Account, "Fields"):
                 fields = [self.client.Account.Fields.POSITIONS]
@@ -386,7 +668,7 @@ class SchwabStreamer:
             else:
                 response = self.client.get_account(account_hash, fields=fields)
 
-            logger.info(
+            logger.debug(
                 "ACCOUNT RESPONSE\n%s",
                 json.dumps(response, indent=2, default=str),
             )
@@ -396,28 +678,22 @@ class SchwabStreamer:
 
             account_payload = self._coerce_payload(response)
 
-            logger.info(
+            logger.debug(
                 "Account payload keys: %s",
                 list(account_payload.keys()) if isinstance(account_payload, dict) else type(account_payload),
             )
 
-            logger.info(
+            logger.debug(
                 "ACCOUNT PAYLOAD\n%s",
                 json.dumps(account_payload, indent=2, default=str),
             )
             positions = self._extract_positions(account_payload)
-            logger.info(
-                "Extracted %d raw positions",
-                len(positions),
-            )
+            logger.debug("Extracted %d raw positions",len(positions),)
 
             normalized_positions = []
             for position in positions:
                 normalized = self._normalize_position(position)
-                logger.info(
-                    "Normalized: %s",
-                    normalized,
-                )
+                logger.debug("Normalized: %s", normalized)
                 if normalized is None:
                     continue
                 normalized_positions.append(normalized)
@@ -431,11 +707,13 @@ class SchwabStreamer:
                     },
                 )
             )
+            return normalized_positions
         except Exception:
             logger.exception(
                 "Failed refreshing positions from Schwab account %s",
                 account_hash,
             )
+            return None
 
     def _coerce_payload(self, response):
         if response is None:
@@ -476,21 +754,6 @@ class SchwabStreamer:
 
         return []
 
-    def old_extract_positions(self, payload):
-        if not isinstance(payload, dict):
-            return []
-
-        if isinstance(payload.get("positions"), list):
-            return payload["positions"]
-
-        for key in ("securitiesAccount", "account"):
-            nested = payload.get(key)
-            if isinstance(nested, dict):
-                positions = nested.get("positions")
-                if isinstance(positions, list):
-                    return positions
-
-        return []
 
     def _normalize_position(self, position):
         if not isinstance(position, dict):
@@ -546,7 +809,6 @@ class SchwabStreamer:
     def parse_quote(self,message,):
 
         try:
-
             quote = {"symbol": message["key"],}
 
             field_map = {
@@ -557,18 +819,13 @@ class SchwabStreamer:
             }
 
             for schwab_name, internal_name in field_map.items():
-
                 if schwab_name in message:
                     quote[internal_name] = message[schwab_name]
-
             return quote
-
         except Exception:
-
             logger.exception(
                 "Quote parse failure"
             )
-
             return None
 
 
@@ -579,38 +836,35 @@ class SchwabStreamer:
 
     async def disconnect(self):
 
-        logger.info(
-            "Disconnecting Schwab streamer"
-        )
+        logger.debug("Disconnecting Schwab streamer")
 
+        was_connected = self._connected
+        self._connected = False
 
         if self.stream_client:
+            if self.movers_task:
+                self.movers_task.cancel()
+
+                with suppress(asyncio.CancelledError):
+                    await self.movers_task
+                self.movers_task = None
 
             try:
-
-                await (
-                    self.stream_client
-                    .logout()
-                )
-
+                await (self.stream_client.logout())
             except Exception:
-
                 pass
 
-
-        await self.bus.publish_system(
-            SystemEvent(
-                name="DISCONNECTED"
+        if was_connected:
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="DISCONNECTED"
+                )
             )
-        )
-
 
         self.stream_client = None
         self._subscriptions_ready = False
         self._subscribed_symbols.clear()
 
 
-
     def stop(self):
-
         self.running = False

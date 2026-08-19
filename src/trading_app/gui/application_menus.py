@@ -47,6 +47,7 @@ class ApplicationMenus:
         on_flatten_position: Optional[Callable] = None,
         on_about: Optional[Callable] = None,
         on_refresh: Optional[Callable] = None,
+        on_reload_symbols: Optional[Callable] = None,
     ):
 
         self.root = root
@@ -61,6 +62,7 @@ class ApplicationMenus:
 
         self.on_about = on_about
         self.on_refresh = on_refresh
+        self.on_reload_symbols = on_reload_symbols
 
 
         self.menu = tk.Menu( root )
@@ -102,6 +104,11 @@ class ApplicationMenus:
         menu.add_command(
             label="Disconnect",
             command=self._disconnect,
+        )
+
+        menu.add_command(
+            label="Reload Symbol Files",
+            command=self._reload_symbols,
         )
 
 
@@ -208,6 +215,11 @@ class ApplicationMenus:
 
         if self.on_disconnect:
             self.on_disconnect()
+
+    def _reload_symbols(self):
+
+        if self.on_reload_symbols:
+            self.on_reload_symbols()
 
 
     def _exit(self):
