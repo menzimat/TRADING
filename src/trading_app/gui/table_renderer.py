@@ -422,6 +422,14 @@ class QuoteTable:
         self.symbol_rows.clear()
         self.suppressed_symbols.clear()
 
+    def get_symbols(self) -> list[str]:
+        """Return QuoteTable symbols in their current visual order."""
+
+        return [
+            self.tree.item(iid, "values")[0]
+            for iid in self.tree.get_children()
+        ]
+
 
     def get_quote(
         self,
@@ -537,17 +545,15 @@ class QuoteTable:
                 column,
             )
 
-            rows.append(
-                (
-                    self._sortable_value(value),
-                    iid,
-                )
-            )
+            rows.append((self._sortable_value(column, value), iid))
 
 
+        # Keep incomplete numerical rows at the end in either sort direction.
         rows.sort(
-            reverse=self.sort_reverse
+            key=lambda row: row[0][1],
+            reverse=self.sort_reverse,
         )
+        rows.sort(key=lambda row: row[0][0])
 
 
         for index, (_, iid) in enumerate(rows):
@@ -636,16 +642,24 @@ class QuoteTable:
 
     @staticmethod
     def _sortable_value(
+        column,
         value,
     ):
+        """Return same-type keys even if an incomplete row reaches the table."""
+
+        if column == "symbol":
+            return (False, str(value).lower())
 
         try:
-            return float(
-                str(value)
-                .replace("%", "")
-                .replace(",", "")
+            return (
+                False,
+                float(
+                    str(value)
+                    .replace("%", "")
+                    .replace(",", "")
+                ),
             )
-
-        except ValueError:
-
-            return str(value).lower()
+        except (TypeError, ValueError):
+            # Empty/unparseable numerical values sort after quoted values on
+            # ascending sorts and never cause float/string comparisons.
+            return (True, 0.0)

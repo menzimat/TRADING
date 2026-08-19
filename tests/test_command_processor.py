@@ -48,8 +48,15 @@ class DummyResponse:
 
 
 class CommandProcessorTests(unittest.TestCase):
+    @staticmethod
+    def make_processor(**kwargs):
+        return CommandProcessor(
+            is_simulation_enabled=lambda: False,
+            **kwargs,
+        )
+
     def test_limit_order_submission_uses_request_payload(self):
-        processor = CommandProcessor(
+        processor = self.make_processor(
             client=DummyClient(),
             bus=DummyBus(),
             state_engine=DummyStateEngine(),
@@ -76,7 +83,7 @@ class CommandProcessorTests(unittest.TestCase):
 
     def test_place_order_uses_selected_account_hash(self):
         client = DummyClient()
-        processor = CommandProcessor(
+        processor = self.make_processor(
             client=client,
             bus=DummyBus(),
             state_engine=DummyStateEngine(),
@@ -97,7 +104,7 @@ class CommandProcessorTests(unittest.TestCase):
         self.assertEqual(client.last_account_hash, "request-account-hash")
 
     def test_extract_response_diagnostics(self):
-        processor = CommandProcessor(
+        processor = self.make_processor(
             client=DummyClient(),
             bus=DummyBus(),
             state_engine=DummyStateEngine(),
@@ -122,7 +129,7 @@ class CommandProcessorTests(unittest.TestCase):
         state_engine = PositionAwareStateEngine(
             {"AAPL": type("Position", (), {"quantity": 3})()}
         )
-        processor = CommandProcessor(
+        processor = self.make_processor(
             client=client,
             bus=bus,
             state_engine=state_engine,
@@ -143,7 +150,7 @@ class CommandProcessorTests(unittest.TestCase):
         bus = DummyBus()
         client = DummyClient()
         client.account_hash = "acct-1"
-        processor = CommandProcessor(
+        processor = self.make_processor(
             client=client,
             bus=bus,
             state_engine=PositionAwareStateEngine(),

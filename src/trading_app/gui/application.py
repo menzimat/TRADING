@@ -82,6 +82,8 @@ class TradingApplication:
         on_instruction_submit=None,
         on_connect=None,
         on_disconnect=None,
+        on_reload_symbols=None,
+        on_exit=None,
         on_add_symbol=None,
         on_remove_symbol=None,
         resolve_instruction=None,
@@ -102,6 +104,8 @@ class TradingApplication:
         self.on_instruction_submit = (on_instruction_submit)
         self.on_connect = (on_connect)
         self.on_disconnect = (on_disconnect)
+        self.on_reload_symbols = on_reload_symbols
+        self.on_exit = on_exit
         self.on_add_symbol = on_add_symbol
         self.on_remove_symbol = on_remove_symbol
         self.resolve_instruction = resolve_instruction
@@ -129,6 +133,7 @@ class TradingApplication:
         self._build_layout()
 
         self._build_menu()
+        self.root.protocol("WM_DELETE_WINDOW", self._exit)
 
 
     # -------------------------------------------------------------
@@ -421,13 +426,16 @@ class TradingApplication:
             on_flatten_position=self._flatten_position,
 
             on_exit=
-                self.shutdown,
+                self._exit,
 
             on_about=
                 self._about,
 
             on_refresh=
                 self._refresh_positions,
+
+            on_reload_symbols=
+                self._reload_symbols,
         )
 
 
@@ -597,6 +605,16 @@ class TradingApplication:
 
             self.on_disconnect()
 
+    def _reload_symbols(self):
+        if self.on_reload_symbols:
+            self.on_reload_symbols()
+
+    def _exit(self):
+        if self.on_exit:
+            self.on_exit()
+        else:
+            self.shutdown()
+
 
     def _flatten_position(self):
 
@@ -694,6 +712,42 @@ class TradingApplication:
                 symbol,
                 quantity,
             )
+
+    def replace_symbols(self, symbols, positions=None):
+        """Rebuild QuoteTable from current complete quotes after reload."""
+
+        positions = (
+            dict(self.quote_table.position_cache)
+            if positions is None
+            else dict(positions)
+        )
+        existing_quotes = dict(self.quote_table.row_cache)
+        self.quote_table.clear()
+        self.quote_table.position_cache.update(positions)
+
+        # Position symbols must remain visible/actionable even when they were
+        # not in either ticker file.  Prefer StateEngine's latest quote cache;
+        # the pre-reload row cache covers the short event-queue race before a
+        # fresh streaming update is delivered.
+        refreshed_symbols = list(dict.fromkeys([*symbols, *positions]))
+        for symbol in refreshed_symbols:
+            quote = self.get_quote(symbol) if self.get_quote else None
+            quote = quote or existing_quotes.get(symbol)
+            if self._has_complete_quote(quote):
+                self.quote_table.update_quote(symbol, quote)
+
+        self.trade_instruction_panel.set_symbol(None)
+
+    @staticmethod
+    def _has_complete_quote(quote):
+        if quote is None:
+            return False
+
+        for field in ("last", "bid", "ask", "volume"):
+            value = quote.get(field) if isinstance(quote, dict) else getattr(quote, field, None)
+            if value is None or value == "":
+                return False
+        return True
 
     def set_connection_status(
         self,

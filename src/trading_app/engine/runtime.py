@@ -94,6 +94,7 @@ class Runtime:
         self.thread = None
 
         self.running = False
+        self.streamer_task = None
 
         self.hotkeys_enabled = False
 
@@ -212,7 +213,11 @@ class Runtime:
     def refresh_positions(self) -> bool:
         """Request a low-frequency Schwab position refresh."""
 
-        if not self.running or self.loop is None:
+        if (
+            not self.running
+            or self.loop is None
+            or not getattr(self.streamer, "_connected", False)
+        ):
             return False
 
         asyncio.run_coroutine_threadsafe(
@@ -220,6 +225,64 @@ class Runtime:
             self.loop,
         )
         return True
+
+    def reload_symbol_files(self) -> bool:
+        """Reload ticker files and replace the displayed/subscribed symbols."""
+
+        if (
+            not self.running
+            or self.loop is None
+            or not getattr(self.streamer, "_connected", False)
+        ):
+            return False
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._reload_symbol_files_from_broker(),
+            self.loop,
+        )
+
+        def apply_symbols(completed):
+            try:
+                symbols, positions = completed.result()
+            except Exception:
+                logger.exception("Unable to reload ticker files")
+                return
+
+            try:
+                self.gui_queue.put_nowait(
+                    SystemEvent(
+                        name="SYMBOLS_RELOADED",
+                        payload={
+                            "symbols": symbols,
+                            "positions": positions,
+                        },
+                    )
+                )
+            except queue.Full:
+                logger.warning("GUI queue full; symbol reload display was skipped")
+
+        future.add_done_callback(apply_symbols)
+        return True
+
+    async def _reload_symbol_files_from_broker(self):
+        """Query Schwab positions before replacing quote subscriptions."""
+
+        snapshots = await self.streamer.refresh_positions(
+            self.selected_account_hash
+        )
+        if self.selected_account_hash in snapshots:
+            positions = {
+                position["symbol"]: position["quantity"]
+                for position in snapshots[self.selected_account_hash]
+            }
+        else:
+            # A failed broker query must not erase the still-useful cached
+            # position display; a later reload/account event can retry it.
+            positions = self.state_engine.get_account_position_quantities(
+                self.selected_account_hash
+            )
+        symbols = await self.streamer.reload_symbol_files(positions)
+        return symbols, positions
 
     def set_default_account(self, accounts, acct_list, cfg):
         if cfg.defaults.account in acct_list:
@@ -294,11 +357,10 @@ class Runtime:
         # Start async services
         #
 
+        self.streamer_task = asyncio.create_task(self.streamer.run())
         tasks = [
 
-            asyncio.create_task(
-                self.streamer.run()
-            ),
+            self.streamer_task,
 
             asyncio.create_task(
                 self.command_processor.run()
@@ -600,6 +662,13 @@ class Runtime:
                     len(event.payload),
                 )
                 self.gui.update_scanner(event.payload )
+            elif event.name == "SYMBOLS_RELOADED":
+                payload = event.payload or {}
+                self.gui.replace_symbols(
+                    payload.get("symbols", []),
+                    payload.get("positions", {}),
+                )
+                return
             elif event.name == "CONNECTED":
                 self.gui.set_connection_status(
                     "Connected"
@@ -746,6 +815,43 @@ class Runtime:
                 self.loop,
             )
 
+    def disconnect(self):
+        """Disconnect only the Schwab stream, leaving the runtime restartable."""
+
+        if not self.running or self.loop is None:
+            return
+
+        asyncio.run_coroutine_threadsafe(
+            self._disconnect_streamer(),
+            self.loop,
+        )
+
+    async def _disconnect_streamer(self):
+        self.streamer.stop()
+        await self.streamer.disconnect()
+
+        if self.streamer_task and not self.streamer_task.done():
+            await self.streamer_task
+
+    def connect(self):
+        """Start a new Schwab stream after a menu disconnect."""
+
+        if not self.running:
+            self.start()
+            return
+
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                self._connect_streamer(),
+                self.loop,
+            )
+
+    async def _connect_streamer(self):
+        if self.streamer_task and not self.streamer_task.done():
+            return
+
+        self.streamer_task = asyncio.create_task(self.streamer.run())
+
 
 
     async def _shutdown_async(
@@ -762,6 +868,9 @@ class Runtime:
         ):
 
             self.streamer.stop()
+
+        if hasattr(self.streamer, "disconnect"):
+            await self.streamer.disconnect()
 
 
         if hasattr(

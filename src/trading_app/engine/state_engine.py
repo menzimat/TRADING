@@ -340,6 +340,7 @@ class StateEngine:
         # Replace the account's complete position snapshot.
         #
         self.state.positions_by_account[account_hash] = current
+        self._refresh_aggregate_positions()
 
         #
         # Determine every symbol whose displayed position may have
@@ -381,6 +382,29 @@ class StateEngine:
                     },
                 )
             )
+
+    def _refresh_aggregate_positions(self):
+        """Maintain the legacy aggregate position lookup across accounts."""
+
+        aggregate = {}
+        for account_positions in self.state.positions_by_account.values():
+            for symbol, position in account_positions.items():
+                existing = aggregate.get(symbol)
+                if existing is None:
+                    aggregate[symbol] = PositionState(
+                        symbol=symbol,
+                        quantity=position.quantity,
+                        average_price=position.average_price,
+                    )
+                else:
+                    existing.quantity += position.quantity
+
+        # Retain zero-quantity records for symbols removed from the most
+        # recent account snapshot so legacy callers can clear their display.
+        for symbol in self.state.positions:
+            aggregate.setdefault(symbol, PositionState(symbol=symbol))
+
+        self.state.positions = aggregate
 
 
     def update_order(

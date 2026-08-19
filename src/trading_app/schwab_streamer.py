@@ -58,6 +58,7 @@ class SchwabStreamer:
         self.state_engine = state_engine
 
         self.running = False
+        self._connected = False
 
         self.stream_client = None
 
@@ -71,7 +72,13 @@ class SchwabStreamer:
         self._subscription_lock = asyncio.Lock()
         self._subscriptions_ready = False
 
-        self.scanner_symbols = self.load_scanner_symbols()
+        # Scanner file symbols that are already in the main watchlist are
+        # deliberately omitted.  The two lists share one quote subscription
+        # set, and scanner_tickers.txt is persisted as the supplemental list.
+        self.scanner_symbols = [
+            symbol for symbol in self.load_scanner_symbols()
+            if symbol not in self.symbol_set
+        ]
         self.scanner_symbol_set = set(self.scanner_symbols)
 
         for symbol in self.scanner_symbols:
@@ -160,6 +167,77 @@ class SchwabStreamer:
             for line in path.read_text().splitlines()
             if line.strip()
         ]
+
+    @staticmethod
+    def _unique_symbols(symbols) -> list[str]:
+        """Normalize symbols while retaining their order."""
+
+        seen = set()
+        normalized = []
+        for symbol in symbols:
+            symbol = symbol.strip().upper()
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                normalized.append(symbol)
+        return normalized
+
+    def all_symbols(self) -> list[str]:
+        """Return the complete displayed/subscribed symbol set in order."""
+
+        return self._unique_symbols(self.symbols + self.scanner_symbols)
+
+    def save_scanner_symbols(self, symbols) -> list[str]:
+        """Persist supplemental QuoteTable symbols without duplicating tickers.
+
+        ``tickers.txt`` remains the primary watchlist.  Every displayed symbol
+        not already present there is written to ``scanner_tickers.txt``.
+        """
+
+        primary_symbols = set(self.load_symbols())
+        scanner_symbols = [
+            symbol for symbol in self._unique_symbols(symbols)
+            if symbol not in primary_symbols
+        ]
+        path = Path("cfg") / "scanner_tickers.txt"
+        contents = "\n".join(scanner_symbols)
+        path.write_text(f"{contents}\n" if contents else "")
+        return scanner_symbols
+
+    async def reload_symbol_files(self, position_symbols=()) -> list[str]:
+        """Replace the live watchlist with ticker files and open positions.
+
+        Open positions are always retained in the market-data subscription set
+        so their QuoteTable rows remain actionable after a reload.
+        """
+
+        primary_symbols = self._unique_symbols(
+            self.load_symbols() + list(position_symbols)
+        )
+        primary_set = set(primary_symbols)
+        scanner_symbols = [
+            symbol for symbol in self._unique_symbols(self.load_scanner_symbols())
+            if symbol not in primary_set
+        ]
+        desired_symbols = primary_symbols + scanner_symbols
+        desired_set = set(desired_symbols)
+
+        if self._subscriptions_ready:
+            async with self._subscription_lock:
+                removed = self._subscribed_symbols - desired_set
+                if removed:
+                    await self.stream_client.level_one_equity_unsubs(sorted(removed))
+                added = desired_set - self._subscribed_symbols
+                if added:
+                    await self.stream_client.level_one_equity_add(sorted(added))
+                self._subscribed_symbols = desired_set
+
+        self.symbols = primary_symbols
+        self.symbol_set = primary_set
+        self.scanner_symbols = scanner_symbols
+        self.scanner_symbol_set = set(scanner_symbols)
+        self.base_scanner_symbols = set(scanner_symbols)
+        self.state_engine.scanner_state.set_watch_symbols(self.scanner_symbol_set)
+        return desired_symbols
 
     def has_symbol(self, symbol: str) -> bool:
         """Return whether a symbol is already on the streamer watchlist."""
@@ -488,6 +566,8 @@ class SchwabStreamer:
         
         await self.stream_client.account_activity_sub()
 
+        self._connected = True
+
         self._subscribed_symbols.clear()
         self._subscriptions_ready = False
         logger.debug("Schwab websocket connected")
@@ -561,14 +641,20 @@ class SchwabStreamer:
 
     async def refresh_positions(self, account_hash=None):
         if self.state_engine is None or self.client is None:
-            return
+            return {}
 
         account_hashes = [account_hash] if account_hash else self.account_hashes
         if not account_hashes and self.account_hash:
             account_hashes = [self.account_hash]
 
+        snapshots = {}
         for account_hash in account_hashes:
-            await self._refresh_account_positions(account_hash)
+            positions = await self._refresh_account_positions(
+                account_hash
+            )
+            if positions is not None:
+                snapshots[account_hash] = positions
+        return snapshots
 
     async def _refresh_account_positions(self, account_hash):
         try:
@@ -621,11 +707,13 @@ class SchwabStreamer:
                     },
                 )
             )
+            return normalized_positions
         except Exception:
             logger.exception(
                 "Failed refreshing positions from Schwab account %s",
                 account_hash,
             )
+            return None
 
     def _coerce_payload(self, response):
         if response is None:
@@ -750,6 +838,8 @@ class SchwabStreamer:
 
         logger.debug("Disconnecting Schwab streamer")
 
+        was_connected = self._connected
+        self._connected = False
 
         if self.stream_client:
             if self.movers_task:
@@ -764,11 +854,12 @@ class SchwabStreamer:
             except Exception:
                 pass
 
-        await self.bus.publish_system(
-            SystemEvent(
-                name="DISCONNECTED"
+        if was_connected:
+            await self.bus.publish_system(
+                SystemEvent(
+                    name="DISCONNECTED"
+                )
             )
-        )
 
         self.stream_client = None
         self._subscriptions_ready = False

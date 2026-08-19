@@ -9,10 +9,12 @@ from trading_app.trading_config import OffsetUnits, PriceBasis, QuantityType
 
 
 class PositionStateEngine:
+    scanner_state = object()
+
     def __init__(self, quantity):
         self.position = type("Position", (), {"quantity": quantity})()
 
-    def get_position(self, symbol):
+    def get_position(self, symbol, account_hash=None):
         return self.position if symbol == "AAPL" else None
 
 

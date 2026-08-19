@@ -16,8 +16,14 @@ class HotkeyManagerTests(unittest.TestCase):
             runtime=DummyRuntime(),
         )
 
-        self.assertEqual(manager.resolve_hotkey_target("ctrl+b"), "buy_limit")
-        self.assertEqual(manager.resolve_hotkey_target("esc"), "cancel_all")
+        self.assertEqual(
+            manager.resolve_hotkey_target("ctrl+b"),
+            {"template_name": "buy_limit", "overrides": None},
+        )
+        self.assertEqual(
+            manager.resolve_hotkey_target("esc"),
+            {"action": "CANCEL_ALL"},
+        )
 
 
 if __name__ == "__main__":

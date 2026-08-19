@@ -260,7 +260,7 @@ class CommandProcessor:
             raise ValueError("Missing symbol")
 
         try:
-            if side == "SELL":
+            if side is Side.SELL:
                 await self._enforce_sell_position_limit(request)
         except Exception as exc:
             logger.exception("Sell validation failed for %s", symbol)
