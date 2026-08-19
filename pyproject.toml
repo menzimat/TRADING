@@ -6,10 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "trading_app"
 version = "2.0.0"
 dependencies = [
-"schwab-py",
+"schwab-py==1.5.1",
 "httpx",
-"websockets",
-"pykeepass"
+"websockets>=16,<17",
+"pykeepass",
+"numpy",
+"sounddevice"
 ]
 
 [tool.setuptools]

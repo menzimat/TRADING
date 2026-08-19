@@ -185,6 +185,49 @@ hotkeys:
 
   ctrl+shift+u: refresh_quotes
 
+# ------------------------------------------------------------
+# Trade execution sounds
+#
+# Sounds are generated in memory at application startup.
+# No sound files are loaded when a trade executes.
+#
+# type:
+#   beep  = single fixed-frequency tone
+#   boop  = downward frequency sweep
+#   chime = two-tone sound
+#
+# Devices:
+#   device: null # default
+#   device: 11   #Jabra
+#   device: 25   # PipeWire ALSA
+#  
+#
+# ------------------------------------------------------------
+
+sounds:
+
+  enabled: true
+  device: 25
+  sample_rate: 48000
+
+  # Maximum number of pending notifications.
+  # The oldest notification is discarded if this is exceeded.
+  queue_size: 8
+
+  buy:
+    type: chime
+    frequency_hz: 880
+    frequency2_hz: 1175
+    duration_ms: 180
+    volume: 0.30
+
+  sell:
+    type: boop
+    frequency_hz: 520
+    frequency2_hz: 390
+    duration_ms: 180
+    volume: 0.30
+
 
 # ------------------------------------------------------------
 # Reusable order templates

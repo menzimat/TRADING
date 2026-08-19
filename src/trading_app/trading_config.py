@@ -28,6 +28,11 @@ from trading_app.models.order import (
 from enum import Enum
 from copy import deepcopy
 
+from trading_app.services.trade_sound import (
+    ToneSettings,
+    TradeSoundSettings,
+)
+
 # ---------------------------------------------------------
 # Trading configuration enums
 # ---------------------------------------------------------
@@ -156,6 +161,7 @@ class TradingConfig:
     price_offsets: dict[str, OffsetDefinition]
     hotkeys: dict[str, str]
     templates: dict[str, TemplateDefinition]
+    sounds: TradeSoundSettings
 
     def get_hotkey(self, key: str) -> dict | None:
         return self.config["hotkeys"].get(key)
@@ -316,6 +322,101 @@ class TradingConfig:
         hotkeys = dict(
             cfg.get("hotkeys", {})
         )
+        
+        sound_cfg = cfg.get("sounds", {})
+
+        buy_cfg = sound_cfg.get("buy", {})
+        sell_cfg = sound_cfg.get("sell", {})
+
+        sounds = TradeSoundSettings(
+            enabled=bool(
+                sound_cfg.get("enabled", True)
+            ),
+
+            device=sound_cfg.get("device"),
+
+            sample_rate=int(
+                sound_cfg.get("sample_rate", 48000)
+            ),
+
+            queue_size=int(
+                sound_cfg.get("queue_size", 8)
+            ),
+
+            buy=ToneSettings(
+                type=str(
+                    buy_cfg.get("type", "chime")
+                ),
+
+                frequency_hz=float(
+                    buy_cfg.get(
+                        "frequency_hz",
+                        880.0,
+                    )
+                ),
+
+                frequency2_hz=(
+                    float(
+                        buy_cfg["frequency2_hz"]
+                    )
+                    if buy_cfg.get(
+                        "frequency2_hz"
+                    ) is not None
+                    else None
+                ),
+
+                duration_ms=float(
+                    buy_cfg.get(
+                        "duration_ms",
+                        120.0,
+                    )
+                ),
+
+                volume=float(
+                    buy_cfg.get(
+                        "volume",
+                        0.30,
+                    )
+                ),
+            ),
+
+            sell=ToneSettings(
+                type=str(
+                    sell_cfg.get("type", "boop")
+                ),
+
+                frequency_hz=float(
+                    sell_cfg.get(
+                        "frequency_hz",
+                        520.0,
+                    )
+                ),
+
+                frequency2_hz=(
+                    float(
+                        sell_cfg["frequency2_hz"]
+                    )
+                    if sell_cfg.get(
+                        "frequency2_hz"
+                    ) is not None
+                    else None
+                ),
+
+                duration_ms=float(
+                    sell_cfg.get(
+                        "duration_ms",
+                        120.0,
+                    )
+                ),
+
+                volume=float(
+                    sell_cfg.get(
+                        "volume",
+                        0.30,
+                    )
+                ),
+            ),
+        )
 
         #
         # ---------------------------------------------------------
@@ -328,6 +429,7 @@ class TradingConfig:
             price_offsets=offsets,
             hotkeys=hotkeys,
             templates=templates,
+            sounds=sounds,
         )
     
     def resolve_price_offset(self, offset):
