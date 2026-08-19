@@ -35,7 +35,7 @@ from trading_app.bus import (
     EventType,
     SystemEvent,
 )
-
+from trading_app.services.trade_sound import TradeSoundService
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ class SchwabStreamer:
         client,
         bus: EventBus,
         state_engine=None,
+        trade_sound: TradeSoundService | None = None,
     ):
 
         self.client = client
@@ -56,6 +57,8 @@ class SchwabStreamer:
         self.bus = bus
 
         self.state_engine = state_engine
+
+        self.trade_sound = trade_sound
 
         self.running = False
         self._connected = False
@@ -626,6 +629,480 @@ class SchwabStreamer:
             )
 
     async def handle_account_activity(self, message):
+        """
+        Process Schwab Account Activity messages.
+
+        POSITION_REFRESH_REQUESTED continues to be published for every
+        account-activity message, preserving the existing application
+        behavior.
+
+        Trade sounds are generated only for a confirmed
+        OrderFillCompleted event.  ORDER_ACCEPTED and other intermediate
+        order states do not produce sounds.
+        """
+
+
+        logger.info(
+            "ACCOUNT ACTIVITY RECEIVED: %r",
+            message,
+        )
+        payload = (
+            message.get("content")
+            if isinstance(message, dict)
+            else None
+        )
+
+        if not payload:
+            return
+
+        self._process_trade_fill_sounds(payload)
+
+        await self.refresh_positions()
+
+        await self.bus.publish_system(
+            SystemEvent(
+                name="POSITION_REFRESH_REQUESTED",
+                payload=payload,
+            )
+        )
+
+    # ======================================================
+    # Trade fill notifications
+    # ======================================================
+
+    @staticmethod
+    def _parse_schwab_number(value):
+        """
+        Decode Schwab's {lo, signScale} numeric representation.
+
+        Schwab uses signScale for both decimal precision and sign.
+        This helper is primarily useful for diagnostic payloads;
+        sound selection itself does not depend on quantity/price.
+        """
+
+        if value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        if not isinstance(value, dict):
+            return None
+
+        lo = value.get("lo")
+
+        if lo is None:
+            return None
+
+        try:
+            lo = int(lo)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            sign_scale = int(
+                value.get("signScale", 0)
+            )
+        except (TypeError, ValueError):
+            sign_scale = 0
+
+        decimals = sign_scale // 2
+
+        result = lo / (10 ** decimals)
+
+        # Schwab's signScale convention uses an odd signScale
+        # to represent a negative value.
+        if sign_scale % 2:
+            result = -result
+
+        return result
+
+    @staticmethod
+    def _parse_trade_fill_record(record):
+        """
+        Convert one Schwab Account Activity record into a normalized
+        trade-fill dictionary.
+
+        Returns None for all non-fill events.
+
+        Supports both the current Schwab Account Activity representation:
+
+            {
+                "MESSAGE_TYPE": "OrderFillCompleted",
+                "MESSAGE_DATA": "{...}"
+            }
+
+        and the older/internal representation:
+
+            {
+                "2": "OrderFillCompleted",
+                "3": "{...}"
+            }
+        """
+
+        if not isinstance(record, dict):
+            return None
+
+        # Schwab Account Activity normally supplies these fields.
+        event_type = (
+            record.get("MESSAGE_TYPE")
+            or record.get("2")
+        )
+
+        if event_type != "OrderFillCompleted":
+            return None
+
+        raw_data = (
+            record.get("MESSAGE_DATA")
+            if "MESSAGE_DATA" in record
+            else record.get("3")
+        )
+
+        if isinstance(raw_data, str):
+            try:
+                event_data = json.loads(raw_data)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                logger.warning(
+                    "Unable to decode OrderFillCompleted payload"
+                )
+                return None
+
+        elif isinstance(raw_data, dict):
+            event_data = raw_data
+
+        else:
+            return None
+
+        if not isinstance(event_data, dict):
+            return None
+
+        base_event = event_data.get("BaseEvent") or {}
+
+        fill_event = (
+            base_event.get(
+                "OrderFillCompletedEventOrderLegQuantityInfo"
+            )
+            or {}
+        )
+
+        order_info = (
+            fill_event.get(
+                "OrderInfoForTransactionPosting"
+            )
+            or {}
+        )
+
+        execution_info = (
+            fill_event.get("ExecutionInfo")
+            or {}
+        )
+
+        # Schwab sends values such as "Buy", "Sell", "BuyToCover",
+        # etc.  Normalize them before determining the trade direction.
+        buy_sell_code = str(
+            order_info.get("BuySellCode", "")
+        ).strip().lower()
+
+        if buy_sell_code in {
+            "buy",
+            "buytocover",
+            "buy_to_cover",
+        }:
+            side = "BUY"
+
+        elif buy_sell_code in {
+            "sell",
+            "sellshort",
+            "sell_short",
+        }:
+            side = "SELL"
+
+        else:
+            logger.debug(
+                "Ignoring OrderFillCompleted with "
+                "unsupported BuySellCode=%r",
+                buy_sell_code,
+            )
+            return None
+
+        symbol = (
+            order_info.get("Symbol")
+            or event_data.get("Symbol")
+        )
+
+        order_id = (
+            event_data.get("SchwabOrderID")
+            or event_data.get("SchwabOrderId")
+            or order_info.get("SchwabOrderID")
+            or order_info.get("SchwabOrderId")
+        )
+
+        # The live Schwab message uses ExecutionID.  Preserve the
+        # alternate spellings used by other payload variants.
+        execution_id = (
+            execution_info.get("ExecutionID")
+            or execution_info.get("ExecutionId")
+            or execution_info.get("executionID")
+            or execution_info.get("executionId")
+            or fill_event.get("QuantityInfo", {}).get(
+                "ExecutionID"
+            )
+            or fill_event.get("QuantityInfo", {}).get(
+                "ExecutionId"
+            )
+            or order_id
+        )
+
+        execution_quantity = (
+            SchwabStreamer._parse_schwab_number(
+                execution_info.get("ExecutionQuantity")
+            )
+        )
+
+        execution_price = (
+            SchwabStreamer._parse_schwab_number(
+                execution_info.get("ExecutionPrice")
+            )
+        )
+
+        execution_timestamp = (
+            execution_info
+            .get("ExecutionTimeStamp", {})
+            .get("DateTimeString")
+        )
+
+        return {
+            "side": side,
+            "symbol": (
+                str(symbol).upper()
+                if symbol
+                else None
+            ),
+            "order_id": order_id,
+            "execution_id": execution_id,
+            "quantity": execution_quantity,
+            "price": execution_price,
+            "execution_timestamp": execution_timestamp,
+        }
+
+    @staticmethod
+    def _old_parse_trade_fill_record(record):
+        """
+        Convert one Schwab Account Activity record into a normalized
+        trade-fill dictionary.
+
+        Returns None for all non-fill events.
+        """
+
+        if not isinstance(record, dict):
+            return None
+
+        event_type = record.get("2")
+
+        if event_type != "OrderFillCompleted":
+            return None
+
+        raw_data = record.get("3")
+
+        if isinstance(raw_data, str):
+            try:
+                event_data = json.loads(raw_data)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                logger.warning(
+                    "Unable to decode OrderFillCompleted payload"
+                )
+                return None
+
+        elif isinstance(raw_data, dict):
+            event_data = raw_data
+
+        else:
+            return None
+
+        if not isinstance(event_data, dict):
+            return None
+
+        base_event = event_data.get("BaseEvent") or {}
+
+        fill_event = (
+            base_event.get(
+                "OrderFillCompletedEventOrderLegQuantityInfo"
+            )
+            or {}
+        )
+
+        order_info = (
+            fill_event.get(
+                "OrderInfoForTransactionPosting"
+            )
+            or {}
+        )
+
+        execution_info = (
+            fill_event.get("ExecutionInfo")
+            or {}
+        )
+
+        buy_sell_code = str(
+            order_info.get("BuySellCode", "")
+        ).strip().lower()
+
+        if buy_sell_code in {
+            "buy",
+            "buytocover",
+            "buy_to_cover",
+        }:
+            side = "BUY"
+
+        elif buy_sell_code in {
+            "sell",
+            "sellshort",
+            "sell_short",
+        }:
+            side = "SELL"
+
+        else:
+            logger.debug(
+                "Ignoring OrderFillCompleted with "
+                "unsupported BuySellCode=%r",
+                buy_sell_code,
+            )
+            return None
+
+        symbol = (
+            order_info.get("Symbol")
+            or event_data.get("Symbol")
+        )
+
+        order_id = event_data.get(
+            "SchwabOrderID"
+        )
+
+        execution_id = (
+            execution_info.get("ExecutionId")
+            or execution_info.get("ExecutionID")
+            or fill_event.get("QuantityInfo", {}).get(
+                "ExecutionID"
+            )
+            or order_id
+        )
+
+        execution_quantity = (
+            SchwabStreamer._parse_schwab_number(
+                execution_info.get("ExecutionQuantity")
+            )
+        )
+
+        execution_price = (
+            SchwabStreamer._parse_schwab_number(
+                execution_info.get("ExecutionPrice")
+            )
+        )
+
+        return {
+            "side": side,
+            "symbol": (
+                str(symbol).upper()
+                if symbol
+                else None
+            ),
+            "order_id": order_id,
+            "execution_id": execution_id,
+            "quantity": execution_quantity,
+            "price": execution_price,
+            "execution_timestamp": (
+                execution_info
+                .get("ExecutionTimeStamp", {})
+                .get("DateTimeString")
+            ),
+        }
+
+    def _process_trade_fill_sounds(self, payload) -> None:
+        """
+        Generate one sound for each confirmed OrderFillCompleted
+        Account Activity record.
+
+        Duplicate execution IDs are suppressed so reconnect/replay
+        behavior cannot produce duplicate sounds.
+        """
+
+        if self.trade_sound is None:
+            return
+
+        if not isinstance(payload, list):
+            payload = [payload]
+
+        for record in payload:
+
+            fill = self._parse_trade_fill_record(
+                record
+            )
+
+            if fill is None:
+                continue
+
+            execution_id = fill.get(
+                "execution_id"
+            )
+
+            if execution_id:
+                if not hasattr(
+                    self,
+                    "_played_execution_ids",
+                ):
+                    self._played_execution_ids = set()
+
+                if execution_id in (
+                    self._played_execution_ids
+                ):
+                    logger.debug(
+                        "Ignoring duplicate fill sound "
+                        "for execution %s",
+                        execution_id,
+                    )
+                    continue
+
+                self._played_execution_ids.add(
+                    execution_id
+                )
+
+                # Prevent unbounded growth during a long-running
+                # trading session.
+                if len(
+                    self._played_execution_ids
+                ) > 1000:
+                    self._played_execution_ids = set(
+                        list(
+                            self._played_execution_ids
+                        )[-500:]
+                    )
+
+            logger.info(
+                "TRADE FILL: %s %s qty=%s price=%s "
+                "order=%s execution=%s",
+                fill["side"],
+                fill["symbol"],
+                fill["quantity"],
+                fill["price"],
+                fill["order_id"],
+                fill["execution_id"],
+            )
+
+            try:
+                if fill["side"] == "BUY":
+                    self.trade_sound.play_buy()
+                elif fill["side"] == "SELL":
+                    self.trade_sound.play_sell()
+
+            except Exception:
+                # Audio must never interfere with trading.
+                logger.exception(
+                    "Trade sound playback request failed"
+                )
+
+
+
+    async def old_handle_account_activity(self, message):
         payload = message.get("content") if isinstance(message, dict) else None
         if not payload:
             return

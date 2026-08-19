@@ -55,6 +55,11 @@ from trading_app.services.trade_instruction_factory import (
 )
 from trading_app.services.hotkeys import HotkeyManager
 
+from trading_app.services.trade_sound import (
+    TradeSoundService,
+    TradeSoundSettings,
+)
+
 class Engine:
     """
     Main application controller.
@@ -98,11 +103,31 @@ class Engine:
             self.bus, config=self.config,
         )
 
+        sound_cfg = getattr(
+            self.trading_cfg,
+            "sounds",
+            None,
+        )
+
+        if sound_cfg is None:
+            self.trade_sound = TradeSoundService()
+        else:
+            self.trade_sound = TradeSoundService(
+                TradeSoundSettings(
+                    enabled=self.trading_cfg.sounds.enabled,
+                    device=self.trading_cfg.sounds.device,
+                    sample_rate=self.trading_cfg.sounds.sample_rate,
+                    queue_size=self.trading_cfg.sounds.queue_size,
+                    buy=self.trading_cfg.sounds.buy,
+                    sell=self.trading_cfg.sounds.sell,
+                )
+            )
 
         self.streamer = SchwabStreamer(
             self.client,
             self.bus,
             state_engine=self.state_engine,
+            trade_sound=self.trade_sound,
         )
 
 
@@ -248,5 +273,7 @@ class Engine:
             self.gui.quote_table.get_symbols()
         )
         self.runtime.stop()
+
+        self.trade_sound.close()
 
         self.gui.shutdown()
