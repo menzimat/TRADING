@@ -223,6 +223,10 @@ class Engine:
             on_simulation_changed= self.runtime.on_simulation_changed,
 
             on_get_quote= self.state_engine.get_quote,
+
+            on_realtime_trading_quotes_changed=(
+                self.runtime.set_realtime_trading_quotes
+            ),
         )
 
         self.runtime.attach_gui(self.gui)

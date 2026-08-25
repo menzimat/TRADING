@@ -73,6 +73,7 @@ class TradeInstructionPanel:
         on_get_quote: Optional[
             Callable[[str], None]
         ] = None,
+        on_realtime_quotes_changed: Optional[Callable[[bool], None]] = None,
         trading_config=None,
         trade_instruction_factory=None,
     ):
@@ -82,6 +83,7 @@ class TradeInstructionPanel:
         self.on_account_changed = on_account_changed
         self.resolve_instruction = resolve_instruction
         self.on_get_quote = on_get_quote
+        self.on_realtime_quotes_changed = on_realtime_quotes_changed
 
         self.trading_config = (
             trading_config
@@ -354,6 +356,9 @@ class TradeInstructionPanel:
             value=True
         )
 
+        # Off by default: preserves the existing low-frequency GUI behavior.
+        self.realtime_quotes_var = tk.BooleanVar(value=False)
+
         self.price_basis_var.trace_add(
             "write",
             self._price_basis_changed,
@@ -600,6 +605,21 @@ class TradeInstructionPanel:
             columnspan=2,
             sticky="ew",
             pady=5,
+        )
+
+        row += 1
+
+        ttk.Checkbutton(
+            self.frame,
+            text="Real-time trading prices",
+            variable=self.realtime_quotes_var,
+            command=self._realtime_quotes_changed,
+        ).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(0, 5),
         )
 
         row += 1
@@ -950,6 +970,12 @@ class TradeInstructionPanel:
                 self._fmt(
                     self.instruction.order_price
                 )
+            )
+
+    def _realtime_quotes_changed(self):
+        if self.on_realtime_quotes_changed:
+            self.on_realtime_quotes_changed(
+                bool(self.realtime_quotes_var.get())
             )
 
 

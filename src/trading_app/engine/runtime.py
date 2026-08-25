@@ -37,6 +37,7 @@ from trading_app.bus import (
 from trading_app.models.order import Side
 from trading_app.trading_config import QuantityType
 from trading_app.scanner.scanner_engine import ScannerEngine
+from trading_app.services.price_calculator import PriceCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,13 @@ class Runtime:
 
         self.gui_queue = queue.Queue(maxsize=5000)
 
+        # The quote table deliberately uses the normal GUI polling cadence.
+        # When enabled, this one-slot queue gives the Trade Instruction panel
+        # the newest Schwab quote without making Treeview redraw for every tick.
+        self.realtime_trading_quotes = False
+        self.realtime_quote_queue = queue.Queue(maxsize=1)
+        self.realtime_quote_poll_ms = 5
+
         self.trading_config = trading_config
 
         #self.account_list is a dictionary of the account numbers loaded from the
@@ -121,6 +129,35 @@ class Runtime:
 
     def set_simulation_mode(self, enabled):
         self.simulation_mode = enabled
+
+    def set_realtime_trading_quotes(self, enabled: bool):
+        """Enable low-latency quote redraws for the Trade Instruction panel."""
+
+        self.realtime_trading_quotes = bool(enabled)
+        if not self.realtime_trading_quotes:
+            self._clear_realtime_quote_queue()
+
+    def _clear_realtime_quote_queue(self):
+        while True:
+            try:
+                self.realtime_quote_queue.get_nowait()
+            except queue.Empty:
+                return
+
+    def _queue_realtime_quote(self, payload):
+        """Keep only the newest quote; old ticks are never useful to an order panel."""
+
+        try:
+            self.realtime_quote_queue.put_nowait(payload)
+        except queue.Full:
+            try:
+                self.realtime_quote_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.realtime_quote_queue.put_nowait(payload)
+            except queue.Full:
+                pass
 
     @property
     def live_trading(self):
@@ -335,6 +372,7 @@ class Runtime:
         #
 
         self._poll_gui_queue()
+        self._poll_realtime_quote_queue()
 
 
 
@@ -460,6 +498,11 @@ class Runtime:
             )
 
 
+        # A submit can occur between normal (50 ms) GUI redraws.  Refresh the
+        # instruction from StateEngine so a limit price is calculated from the
+        # newest quote Schwab has delivered, not merely the last painted value.
+        self._refresh_instruction_quote(instruction)
+
         request = self.order_factory.create(
             self.resolve_instruction_quantity(instruction)
         )
@@ -468,6 +511,16 @@ class Runtime:
         return self.submit_order(
             request
         )
+
+    def _refresh_instruction_quote(self, instruction):
+        quote = self.state_engine.get_quote(instruction.symbol)
+        if quote is None:
+            return
+
+        instruction.bid = quote.bid
+        instruction.ask = quote.ask
+        instruction.last = quote.last
+        PriceCalculator.apply(instruction)
 
     def resolve_instruction_quantity(self, instruction):
         """Convert a percentage sell instruction into a fixed share quantity.
@@ -543,6 +596,12 @@ class Runtime:
                 break
 
 
+            # StateEngine converts quote ticks to PRICE_UPDATED system events.
+            # Sending the original quote here as well only consumes GUI queue
+            # capacity; the Tk bridge does not render those raw market events.
+            if getattr(event, "event", None).name == "QUOTES":
+                continue
+
             try:
 
                 self.gui_queue.put_nowait(event)
@@ -568,6 +627,12 @@ class Runtime:
                     "system_listener received %s",
                     event.name,
                 )
+                if (
+                    event.name == "PRICE_UPDATED"
+                    and self.realtime_trading_quotes
+                ):
+                    self._queue_realtime_quote(event.payload)
+
                 self.gui_queue.put_nowait(event)
 
             except queue.Full:
@@ -597,6 +662,29 @@ class Runtime:
 
         if self.running:
             self.gui.root.after(50, self._poll_gui_queue,)
+
+    def _poll_realtime_quote_queue(self):
+        """Paint only the active trading symbol at a low-latency cadence."""
+
+        if not self.gui:
+            return
+
+        if self.realtime_trading_quotes:
+            try:
+                payload = self.realtime_quote_queue.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                self.gui.update_trading_panel_quote(
+                    payload["symbol"],
+                    payload,
+                )
+
+        if self.running:
+            self.gui.root.after(
+                self.realtime_quote_poll_ms,
+                self._poll_realtime_quote_queue,
+            )
 
 
     def _handle_gui_event(self, event):

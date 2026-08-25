@@ -93,6 +93,7 @@ class TradingApplication:
         on_flatten_position=None,
         on_simulation_changed=None,
         on_get_quote=None,
+        on_realtime_trading_quotes_changed=None,
     ):
         self.on_order = on_order
         self.trading_config = trading_config
@@ -115,6 +116,9 @@ class TradingApplication:
         self.on_flatten_position = on_flatten_position
         self.on_simulation_changed = on_simulation_changed
         self.on_get_quote = on_get_quote
+        self.on_realtime_trading_quotes_changed = (
+            on_realtime_trading_quotes_changed
+        )
 
         self.root = tk.Tk()
 
@@ -377,6 +381,9 @@ class TradingApplication:
 
             on_get_quote=
                 self.on_get_quote,
+            on_realtime_quotes_changed=(
+                self.on_realtime_trading_quotes_changed
+            ),
 
             trading_config=
                 self.trading_config,
@@ -700,6 +707,11 @@ class TradingApplication:
             self.trade_instruction_panel.set_quote(
                 quote
             )
+
+    def update_trading_panel_quote(self, symbol, quote):
+        """Update the trade panel without redrawing the QuoteTable."""
+        if self.trade_instruction_panel.selected_symbol == symbol:
+            self.trade_instruction_panel.set_quote(quote)
 
     def update_positions(self, quantities):
 
