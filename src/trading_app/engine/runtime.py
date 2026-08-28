@@ -501,7 +501,12 @@ class Runtime:
         # A submit can occur between normal (50 ms) GUI redraws.  Refresh the
         # instruction from StateEngine so a limit price is calculated from the
         # newest quote Schwab has delivered, not merely the last painted value.
-        self._refresh_instruction_quote(instruction)
+        #
+        # DON't DO THIS!  It overrides the users' expectations
+        # Slippage is already factorded into the order, and partial fills
+        # are OK.
+        #
+#        self._refresh_instruction_quote(instruction)
 
         request = self.order_factory.create(
             self.resolve_instruction_quantity(instruction)
