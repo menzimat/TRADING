@@ -33,7 +33,7 @@ from trading_app.schwab_streamer import SchwabStreamer
 from tests.test_schwab_streamer_fill import make_fill_record
 
 
-PIPEWIRE_DEVICE = 25
+PIPEWIRE_DEVICE = 24
 
 
 @pytest.fixture

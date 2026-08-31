@@ -53,7 +53,7 @@ price_offsets:
     units: dollars       # dollars | percent | ticks
 
   aggressive:
-    value: 0.02
+    value: 0.10
     units: dollars
 
   passive:
@@ -161,7 +161,7 @@ hotkeys:
         type: fixed
         value: 1000
       price:
-        offset: default
+        offset: aggressive
 
   ctrl+b: buy_limit
 
@@ -198,8 +198,8 @@ hotkeys:
 #
 # Devices:
 #   device: null # default
-#   device: 11   #Jabra
-#   device: 25   # PipeWire ALSA
+#   device: 3   #Jabra
+#   device: 24   # PipeWire ALSA
 #  
 #
 # ------------------------------------------------------------
@@ -207,7 +207,7 @@ hotkeys:
 sounds:
 
   enabled: true
-  device: 25
+  device: 24
   sample_rate: 48000
 
   # Maximum number of pending notifications.
@@ -275,7 +275,7 @@ templates:
 
       basis: bid
 
-      offset: default
+      offset: aggressive
 
     tif: DAY
 

@@ -22,7 +22,7 @@ from trading_app.services.trade_sound import (
 
 
 # Device 25 was confirmed by the user to produce audio through PipeWire.
-PIPEWIRE_DEVICE = 25
+PIPEWIRE_DEVICE = 24
 
 
 @pytest.fixture
