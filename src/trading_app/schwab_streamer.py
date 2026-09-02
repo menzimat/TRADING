@@ -437,7 +437,7 @@ class SchwabStreamer:
         for symbol in desired - current:
             await self.add_scanner_symbol(symbol)
             self.state_engine.scanner_state.add_watch_symbol(symbol)
-            
+            self.trade_sound.play_scanner_ticker_added()
 
         #
         # Do NOT remove symbols for now. Let the list grow.
