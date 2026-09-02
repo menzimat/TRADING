@@ -39,7 +39,7 @@ defaults:
 
   price_basis: bid       # ask | bid | market
 
-  price_offset: default
+  price_offset: aggressive
 
 
 # ------------------------------------------------------------
@@ -80,7 +80,7 @@ hotkeys:
         type: fixed
         value: 100
       price:
-        offset: default
+        offset: aggressive
 
   shift+2:
     template: buy_limit
@@ -89,7 +89,7 @@ hotkeys:
         type: fixed
         value: 200
       price:
-        offset: default
+        offset: aggressive
 
   shift+3:
     template: buy_limit
@@ -98,7 +98,7 @@ hotkeys:
         type: fixed
         value: 300
       price:
-        offset: default
+        offset: aggressive
 
   shift+4:
     template: buy_limit
@@ -107,7 +107,7 @@ hotkeys:
         type: fixed
         value: 400
       price:
-        offset: default
+        offset: aggressive
 
   shift+5:
     template: buy_limit
@@ -116,7 +116,7 @@ hotkeys:
         type: fixed
         value: 500
       price:
-        offset: default
+        offset: aggressive
 
   shift+6:
     template: buy_limit
@@ -125,7 +125,7 @@ hotkeys:
         type: fixed
         value: 600
       price:
-        offset: default
+        offset: aggressive
 
   shift+7:
     template: buy_limit
@@ -134,7 +134,7 @@ hotkeys:
         type: fixed
         value: 700
       price:
-        offset: default
+        offset: aggressive
 
   shift+8:
     template: buy_limit
@@ -143,7 +143,7 @@ hotkeys:
         type: fixed
         value: 800
       price:
-        offset: default
+        offset: aggressive
 
   shift+9:
     template: buy_limit
@@ -152,7 +152,7 @@ hotkeys:
         type: fixed
         value: 900
       price:
-        offset: default
+        offset: aggressive
 
   shift+0:
     template: buy_limit
@@ -228,6 +228,12 @@ sounds:
     duration_ms: 180
     volume: 0.30
 
+  scanner_ticker_added:
+    type: ding
+    frequency1: 880
+    frequency2: 1320
+    duration: 0.12
+
 
 # ------------------------------------------------------------
 # Reusable order templates
@@ -247,13 +253,13 @@ templates:
 
     quantity:
       type: fixed
-      value: 100
+      value: 500
 
     price:
 
       basis: bid
 
-      offset: default
+      offset: aggressive
 
     tif: DAY
 
@@ -268,19 +274,19 @@ templates:
     order_type: LIMIT
 
     quantity:
-      type: fixed
+      type: percent
       value: 100
 
     price:
 
-      basis: bid
+      basis: ask
 
       offset: aggressive
 
     tif: DAY
 
   sell_limit_all:
-    template_name: "sell_limit"
+    template_name: "sell_limit_all"
 
     template_display_name: "Sell Limit"
 
@@ -294,9 +300,9 @@ templates:
 
     price:
 
-      basis: bid
+      basis: ask
 
-      offset: default
+      offset: aggressive
 
     tif: DAY    
 
@@ -315,9 +321,9 @@ templates:
 
     price:
 
-      basis: bid
+      basis: ask
 
-      offset: default
+      offset: aggressive
 
     tif: DAY
 
@@ -336,9 +342,9 @@ templates:
 
     price:
 
-      basis: bid
+      basis: ask
 
-      offset: default
+      offset: aggressive
 
     tif: DAY
 
@@ -357,9 +363,9 @@ templates:
 
       price:
 
-        basis: bid
+        basis: ask
 
-        offset: default
+        offset: aggressive
 
       tif: DAY
 
@@ -375,7 +381,7 @@ templates:
 
     quantity:
       type: fixed
-      value: 100
+      value: 500
 
     price:
 
@@ -396,7 +402,7 @@ templates:
 
     quantity:
       type: fixed
-      value: 100
+      value: 500
 
     price:
 
