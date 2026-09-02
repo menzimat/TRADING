@@ -63,6 +63,14 @@ class TradeSoundSettings:
         duration_ms=120.0,
         volume=0.30,
     )
+    scanner_ticker_added: ToneSettings = ToneSettings(
+        type="ding",
+        frequency_hz=880.0,
+        frequency2_hz=1320.0,
+        duration_ms=120.0,
+        volume=0.30,
+    )
+
 
 
 class TradeSoundService:
@@ -83,6 +91,7 @@ class TradeSoundService:
 
         self._buy_samples = np.empty(0, dtype=np.float32)
         self._sell_samples = np.empty(0, dtype=np.float32)
+        self._added_symbol = np.empty(0, dtype=np.float32)
 
         self._stream: sd.OutputStream | None = None
         self._current_samples: np.ndarray | None = None
@@ -112,6 +121,8 @@ class TradeSoundService:
             self._sell_samples = self._generate_tone(
                 self.settings.sell
             )
+
+            self._added_symbol = self._generate_tone( self.settings.scanner_ticker_added)
 
             self._stream = sd.OutputStream(
                 samplerate=self.settings.sample_rate,
@@ -290,6 +301,10 @@ class TradeSoundService:
 
         self._queue_sound(self._sell_samples)
 
+    def play_scanner_ticker_added(self) -> None:
+        """Play the notification sound for a newly added scanner ticker."""
+        self._queue_sound(self._added_symbol)
+    
     def _queue_sound(
         self,
         samples: np.ndarray,
