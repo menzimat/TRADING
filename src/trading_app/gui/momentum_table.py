@@ -157,15 +157,16 @@ class MomentumTable:
                 f"{data.get('momentum_score', 0):.2f}",
             )
 
+            if symbol in self.new_symbols:
+                tag = "new"
+            else:
+                old_data = self.previous_row_data.get(symbol)
+                tag = self._price_tag(old_data, data)
+
             self.tree.item(
                 iid,
                 values=values,
-                tags=(
-                    self._price_tag(
-                        data,
-                        price_key,
-                    ),
-                ),
+                tags=(tag,),
             )
 
 
@@ -355,6 +356,8 @@ class MomentumTable:
         self.logger = logging.getLogger(__name__)
 
         self.row_data = {}
+        self.previous_row_data = {}
+        self.new_symbols = set()
 
         self.sort_keys = {
             "Momentum": "momentum_score",
@@ -488,6 +491,13 @@ class MomentumTable:
             foreground=DARK["negative"],
         )
 
+        # Persistent highlight for symbols newly added to the scanner.
+        self.tree.tag_configure(
+            "new",
+            background=DARK.get("select_bg", "#555555"),
+            foreground=DARK.get("select_fg", DARK["fg"]),
+        )
+
         headings = {
             "symbol": "Symbol",
             "last": "Last",
@@ -523,6 +533,8 @@ class MomentumTable:
             expand=True,
         )
 
+        # A click acknowledges a NEW row and removes its persistent highlight.
+        self.tree.bind("<Button-1>", self._acknowledge_new_row)
 
         self.rows = {}
 
@@ -550,23 +562,63 @@ class MomentumTable:
 
         return "neutral"
 
-    def _price_tag(self, data, price_key):
+    def _price_tag(self, old, new):
         """
-        Return the Treeview tag for the selected price metric.
+        Return the Treeview color tag based on change in ``last`` price.
+
+        This mirrors QuoteTable: existing rows are green/positive when the
+        latest last price is above the previous snapshot and red/negative
+        when it is below. Rows without a usable previous price are neutral.
         """
 
+        if old is None:
+            return "neutral"
+
+        def field(obj, name):
+            if isinstance(obj, dict):
+                return obj.get(name)
+            return getattr(obj, name, None)
+
         try:
-            value = float(data.get(price_key, 0))
+            old_price = float(field(old, "last"))
+            new_price = float(field(new, "last"))
         except (TypeError, ValueError):
             return "neutral"
 
-        if value > 0:
+        if new_price > old_price:
             return "positive"
 
-        if value < 0:
+        if new_price < old_price:
             return "negative"
 
         return "neutral"
+
+    def _acknowledge_new_row(self, event):
+        """Remove the persistent NEW highlight when a row is clicked."""
+
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+
+        values = self.tree.item(iid, "values")
+        if not values:
+            return
+
+        symbol = values[0]
+        if symbol not in self.new_symbols:
+            return
+
+        self.new_symbols.discard(symbol)
+
+        data = self.row_data.get(symbol)
+        if data is None:
+            return
+
+        old_data = self.previous_row_data.get(symbol)
+        self.tree.item(
+            iid,
+            tags=(self._price_tag(old_data, data),),
+        )
 
 
     def new_update_scanner(self, symbols):
@@ -590,8 +642,10 @@ class MomentumTable:
         )
 
         #
-        # Replace the authoritative scanner snapshot.
+        # Preserve the previous snapshot so price coloring can compare the
+        # latest ``last`` value against the preceding scanner update.
         #
+        self.previous_row_data = self.row_data.copy()
         self.row_data = dict(symbols)
 
         #
@@ -622,6 +676,10 @@ class MomentumTable:
             )
 
             self.rows[symbol] = iid
+            self.new_symbols.add(symbol)
+
+        # NEW state only applies to symbols still present in the snapshot.
+        self.new_symbols.intersection_update(current_symbols)
 
         #
         # Single rendering path.
@@ -658,6 +716,8 @@ class MomentumTable:
         # Update the authoritative scanner data cache.
         #
         for symbol, data in symbols.items():
+            if symbol in self.row_data:
+                self.previous_row_data[symbol] = self.row_data[symbol]
             self.row_data[symbol] = data
 
         #
@@ -676,6 +736,7 @@ class MomentumTable:
             )
 
             self.rows[symbol] = iid
+            self.new_symbols.add(symbol)
 
         #
         # There is now exactly one rendering path.
