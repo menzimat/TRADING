@@ -25,6 +25,7 @@ import logging
 import json
 from pathlib import Path
 from contextlib import suppress
+import httpx
 from trading_app.models.broker_account import BrokerAccount
 from schwab.streaming import StreamClient
 
@@ -373,15 +374,38 @@ class SchwabStreamer:
         )
 
 
-    async def get_equity_movers(self):
+    async def get_equity_movers(self) -> list[str] | None:
+        """Fetch and filter Schwab equity movers.
 
-        response = await self.client.get_movers(
-            self.client.Movers.Index.EQUITY_ALL,
-            sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
-            frequency=self._frequency_enum(),)
+        ``None`` denotes an unsuccessful refresh, while an empty list is a
+        successful response with no qualifying movers.  Keeping those cases
+        distinct prevents a transient network failure from clearing the
+        current scanner symbols.
+        """
 
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = await self.client.get_movers(
+                self.client.Movers.Index.EQUITY_ALL,
+                sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+                frequency=self._frequency_enum(),)
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.TimeoutException:
+            logger.warning("Timed out while fetching Schwab equity movers")
+            return None
+        except httpx.RequestError as exc:
+            logger.warning("Unable to fetch Schwab equity movers: %s", exc)
+            return None
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Schwab movers request returned HTTP %s",
+                exc.response.status_code,
+            )
+            return None
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Invalid Schwab movers response: %s", exc)
+            return None
+
         symbols = []
 
         logger.debug("MOVERS PAYLOAD TYPE: %s", type(payload))
@@ -458,7 +482,8 @@ class SchwabStreamer:
         while self.running:
             try:
                 movers = await self.get_equity_movers()
-                await self.update_mover_symbols(movers)
+                if movers is not None:
+                    await self.update_mover_symbols(movers)
             except asyncio.CancelledError:
                 raise
             except Exception:
