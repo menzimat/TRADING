@@ -39,7 +39,7 @@ defaults:
 
   price_basis: bid       # ask | bid | market
 
-  price_offset: aggressive
+  price_offset: default
 
 
 # ------------------------------------------------------------
@@ -259,7 +259,7 @@ templates:
 
       basis: bid
 
-      offset: aggressive
+      offset: default
 
     tif: DAY
 
