@@ -83,9 +83,13 @@ class StopOrderRequestTests(unittest.TestCase):
         )
 
         request = OrderFactory().create(instruction)
+        trailing_price = config.templates[
+            "sell_trailing_stop"
+        ].trailing_price
 
-        self.assertEqual(request.trailing_offset, 0.10)
-        self.assertIs(request.trailing_offset_type, TrailingOffsetType.DOLLARS)
+        self.assertIsNotNone(trailing_price)
+        self.assertEqual(request.trailing_offset, trailing_price.value)
+        self.assertIs(request.trailing_offset_type, trailing_price.type)
 
 
 if __name__ == "__main__":

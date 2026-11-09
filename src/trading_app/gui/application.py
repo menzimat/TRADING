@@ -310,7 +310,10 @@ class TradingApplication:
 
         
 
-        left = ttk.Frame(main)
+        left = ttk.Panedwindow(
+            main,
+            orient="vertical",
+        )
 
         left.grid(
             row=0,
@@ -318,22 +321,6 @@ class TradingApplication:
             sticky="nsew",
         )
 
-
-        left.rowconfigure(
-            0,
-            weight=3,
-        )
-
-        left.rowconfigure(
-            1,
-            weight=1,
-        )
-
-
-        left.columnconfigure(
-            0,
-            weight=1,
-        )
 
         self.quote_table = QuoteTable(
                     left,
@@ -343,22 +330,17 @@ class TradingApplication:
                         self._remove_symbol,
                 )
 
-        self.quote_table.widget().grid(
-            row=0,
-            column=0,
-            sticky="nsew",
-        )
-
         self.momentum_table = MomentumTable(
             left
         )
 
-
-        self.momentum_table.widget().grid(
-            row=1,
-            column=0,
-            sticky="nsew",
-            pady=5,
+        left.add(
+            self.quote_table.widget(),
+            weight=3,
+        )
+        left.add(
+            self.momentum_table.widget(),
+            weight=1,
         )
 
         #

@@ -390,7 +390,7 @@ class MomentumTable:
         )
 
         self.sort_selection = tk.StringVar(
-            value="Momentum"
+            value="Total Volume"
         )
 
         controls = ttk.Frame(
@@ -462,6 +462,15 @@ class MomentumTable:
         self.sort_box.bind(
             "<<ComboboxSelected>>",
             self._sort_changed,
+        )
+
+        ttk.Button(
+            controls,
+            text="Deselect ALL",
+            command=self.deselect_all_new_rows,
+        ).pack(
+            side="left",
+            padx=(12, 0),
         )
 
         #
@@ -619,6 +628,24 @@ class MomentumTable:
             iid,
             tags=(self._price_tag(old_data, data),),
         )
+
+    def deselect_all_new_rows(self):
+        """Clear persistent NEW highlights from every scanner row."""
+
+        highlighted_symbols = self.new_symbols.copy()
+        self.new_symbols.clear()
+
+        for symbol in highlighted_symbols:
+            iid = self.rows.get(symbol)
+            data = self.row_data.get(symbol)
+            if iid is None or data is None:
+                continue
+
+            old_data = self.previous_row_data.get(symbol)
+            self.tree.item(
+                iid,
+                tags=(self._price_tag(old_data, data),),
+            )
 
 
     def new_update_scanner(self, symbols):
