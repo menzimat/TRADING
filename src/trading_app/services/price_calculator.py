@@ -32,6 +32,7 @@ from trading_app.trading_config import (
 
 from trading_app.models.order import (
     Side,
+    OrderType,
 )
 
 # ---------------------------------------------------------
@@ -50,6 +51,10 @@ class PriceCalculation:
     offset_amount: float
 
     order_price: Optional[float]
+
+    stop_base_price: Optional[float]
+
+    stop_price: Optional[float]
 
 
 # ---------------------------------------------------------
@@ -80,42 +85,56 @@ class PriceCalculator:
         base_price and order_price.
         """
 
-        base = cls._base_price(instruction)
+        base = cls._base_price(instruction.price_basis, instruction)
+        execution_offset = 0.0
 
         if (
-            instruction.is_limit
+            instruction.order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT)
             and instruction.manual_order_price is not None
         ):
+            order_price = round(instruction.manual_order_price, 2)
+        elif base is None:
+            order_price = None
+        else:
+            offset = cls._offset_amount(
+                base, instruction.offset_value, instruction.offset_units,
+            )
+            if instruction.side is Side.SELL:
+                offset = -offset
+            execution_offset = offset
+            order_price = round(base + offset, 2)
+
+        if not instruction.requires_stop_price:
             return PriceCalculation(
-                base_price=base,
-                offset_amount=0.0,
-                order_price=round(
-                    instruction.manual_order_price,
-                    2,
-                ),
+                base,
+                execution_offset,
+                order_price,
+                None,
+                None,
             )
 
-        if base is None:
-            return PriceCalculation(
-                base_price=None,
-                offset_amount=0.0,
-                order_price=None,
-            )
-
-        offset = cls._offset_amount(
-            base,
+        stop_base = cls._base_price(
+            instruction.stop_price_basis,
             instruction,
         )
-        if instruction.side is Side.SELL:
-            offset = -offset
+        if stop_base is None:
+            stop_price = None
+        else:
+            stop_offset = cls._offset_amount(
+                stop_base,
+                instruction.stop_offset_value,
+                instruction.stop_offset_units,
+            )
+            if instruction.side is Side.SELL:
+                stop_offset = -stop_offset
+            stop_price = round(stop_base + stop_offset, 2)
 
         return PriceCalculation(
-            base_price=base,
-            offset_amount=offset,
-            order_price=round(
-                base + offset,
-                2,
-            ),
+            base,
+            execution_offset,
+            order_price,
+            stop_base,
+            stop_price,
         )
 
     #
@@ -126,13 +145,14 @@ class PriceCalculator:
 
     @staticmethod
     def _base_price(
+        basis: PriceBasis,
         instruction: TradeInstruction,
     ) -> Optional[float]:
         """
         Determine the unadjusted market price.
         """
 
-        match instruction.price_basis:
+        match basis:
 
             case PriceBasis.BID:
                 return instruction.bid
@@ -151,29 +171,29 @@ class PriceCalculator:
                 return None
 
         raise ValueError(
-            f"Unsupported price basis: "
-            f"{instruction.price_basis}"
+            f"Unsupported price basis: {basis}"
         )
 
     @staticmethod
     def _offset_amount(
         base_price: float,
-        instruction: TradeInstruction,
+        offset_value: float,
+        offset_units: OffsetUnits,
     ) -> float:
         """
         Convert the configured offset into
         an absolute dollar adjustment.
         """
 
-        match instruction.offset_units:
+        match offset_units:
 
             case OffsetUnits.DOLLARS:
-                return instruction.offset_value
+                return offset_value
 
             case OffsetUnits.PERCENT:
                 return (
                     base_price
-                    * instruction.offset_value
+                    * offset_value
                     / 100.0
                 )
 
@@ -187,7 +207,7 @@ class PriceCalculator:
                 tick_size = 0.01
 
                 return (
-                    instruction.offset_value
+                    offset_value
                     * tick_size
                 )
 
@@ -225,3 +245,6 @@ class PriceCalculator:
         instruction.order_price = (
             result.order_price
         )
+
+        instruction.stop_base_price = result.stop_base_price
+        instruction.stop_price = result.stop_price

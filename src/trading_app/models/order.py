@@ -50,6 +50,12 @@ class OrderType(Enum):
     TRAILING_STOP = auto()
 
 
+class TrailingOffsetType(Enum):
+
+    DOLLARS = auto()
+    PERCENT = auto()
+
+
 class TimeInForce(Enum):
 
     DAY = auto()
@@ -153,6 +159,8 @@ class OrderRequest:
     stop_price: Optional[float] = None
 
     trailing_offset: Optional[float] = None
+
+    trailing_offset_type: Optional[TrailingOffsetType] = None
 
 
 
@@ -363,6 +371,18 @@ class OrderRequest:
                 "stop_price and limit_price."
             )
 
+        if (
+            self.order_type is OrderType.TRAILING_STOP
+            and (
+                self.trailing_offset is None
+                or self.trailing_offset <= 0
+                or self.trailing_offset_type is None
+            )
+        ):
+            raise ValueError(
+                "Trailing-stop orders require a positive trailing_offset and type."
+            )
+
 
         return True
 
@@ -399,9 +419,22 @@ class OrderRequest:
             payload["price"] = self.limit_price
             payload["limitPrice"] = self.limit_price
 
+        if self.order_type.name == "STOP":
+            payload["stopPrice"] = self.stop_price
+
         if self.order_type.name == "STOP_LIMIT":
             payload["stopPrice"] = self.stop_price
             payload["limitPrice"] = self.limit_price
+            payload["price"] = self.limit_price
+
+        if self.order_type.name == "TRAILING_STOP":
+            payload["stopPriceLinkBasis"] = "LAST"
+            payload["stopPriceLinkType"] = (
+                "VALUE"
+                if self.trailing_offset_type is TrailingOffsetType.DOLLARS
+                else "PERCENT"
+            )
+            payload["stopPriceOffset"] = self.trailing_offset
 
         return payload
 
@@ -410,6 +443,8 @@ class OrderRequest:
         Convert the internal order request into the schema expected by
         schwab-py 1.5.1.
         """
+        self.validate()
+
         from schwab.client.base import OrderBuilder
         from schwab.orders import common
 
@@ -429,7 +464,18 @@ class OrderRequest:
             getattr(common.OrderStrategyType, "SINGLE")
         )
 
-        builder.set_session(common.Session.SEAMLESS)
+        # Stop orders only trigger in the regular market session.  Limit
+        # orders retain the existing seamless-session behavior.
+        session = (
+            common.Session.NORMAL
+            if self.order_type in (
+                OrderType.STOP,
+                OrderType.STOP_LIMIT,
+                OrderType.TRAILING_STOP,
+            )
+            else common.Session.SEAMLESS
+        )
+        builder.set_session(session)
 
         if self.order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT):
             builder.set_price(str(self.limit_price))
@@ -437,6 +483,16 @@ class OrderRequest:
 
         if self.order_type in (OrderType.STOP, OrderType.STOP_LIMIT):
             builder.set_stop_price(str(self.stop_price))
+
+        if self.order_type is OrderType.TRAILING_STOP:
+            builder.set_stop_price_link_basis(common.StopPriceLinkBasis.LAST)
+            link_type = (
+                common.StopPriceLinkType.VALUE
+                if self.trailing_offset_type is TrailingOffsetType.DOLLARS
+                else common.StopPriceLinkType.PERCENT
+            )
+            builder.set_stop_price_link_type(link_type)
+            builder.set_stop_price_offset(self.trailing_offset)
 
  #       if self.order_type.name in {"STOP", "STOP_LIMIT"}:
  #           if self.stop_price is not None:
@@ -484,6 +540,9 @@ class OrderRequest:
 
             trailing_offset=
                 self.trailing_offset,
+
+            trailing_offset_type=
+                self.trailing_offset_type,
 
             entry_offset=
                 self.entry_offset,

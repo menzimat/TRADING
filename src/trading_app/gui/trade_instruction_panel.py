@@ -206,6 +206,14 @@ class TradeInstructionPanel:
             )
         )
 
+        self.stop_price_var.set(
+            self._fmt(self.instruction.stop_price)
+        )
+
+        self.trailing_price_var.set(
+            self._format_trailing_price(self.instruction)
+        )
+
     def _manual_price_changed(
         self,
         *_
@@ -395,6 +403,14 @@ class TradeInstructionPanel:
         )
 
         self.order_price_var = tk.StringVar(
+            value="-"
+        )
+
+        self.stop_price_var = tk.StringVar(
+            value="-"
+        )
+
+        self.trailing_price_var = tk.StringVar(
             value="-"
         )
 
@@ -667,6 +683,21 @@ class TradeInstructionPanel:
             row,
         )
 
+        row += 1
+
+        self._label_display(
+            "Stop Price",
+            self.stop_price_var,
+            row,
+        )
+
+        row += 1
+
+        self._label_display(
+            "Trailing Price",
+            self.trailing_price_var,
+            row,
+        )
 
         row += 1
 
@@ -1271,6 +1302,10 @@ class TradeInstructionPanel:
 
         self.order_price_var.set(self._fmt(i.order_price))
 
+        self.stop_price_var.set(self._fmt(i.stop_price))
+
+        self.trailing_price_var.set(self._format_trailing_price(i))
+
 
     # =========================================================
     # Submit
@@ -1367,6 +1402,8 @@ class TradeInstructionPanel:
             f"Order Type: {instruction.order_type.name}\n"
             f"Quantity: {instruction.quantity}\n"
             f"Price: {cls._fmt(instruction.order_price)}\n"
+            f"Stop Price: {cls._fmt(instruction.stop_price)}\n"
+            f"Trailing Price: {cls._format_trailing_price(instruction)}\n"
             f"TIF: {instruction.tif.name}"
         )
 
@@ -1379,3 +1416,16 @@ class TradeInstructionPanel:
             return "-"
 
         return f"{value:.2f}"
+
+    @classmethod
+    def _format_trailing_price(cls, instruction):
+        if instruction.trailing_offset is None:
+            return "-"
+
+        if instruction.trailing_offset_type is None:
+            return cls._fmt(instruction.trailing_offset)
+
+        return (
+            f"{cls._fmt(instruction.trailing_offset)} "
+            f"{instruction.trailing_offset_type.name.lower()}"
+        )

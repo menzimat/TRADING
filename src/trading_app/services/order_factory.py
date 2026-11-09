@@ -84,13 +84,37 @@ class OrderFactory:
 
             limit_price=(
                 instruction.manual_order_price
-                if instruction.is_limit
+                if instruction.order_type in (
+                    OrderType.LIMIT,
+                    OrderType.STOP_LIMIT,
+                )
                 and instruction.manual_order_price is not None
                 else (
                     instruction.order_price
-                    if instruction.is_limit
+                    if instruction.order_type in (
+                        OrderType.LIMIT,
+                        OrderType.STOP_LIMIT,
+                    )
                     else None
                 )
+            ),
+
+            stop_price=(
+                instruction.stop_price
+                if instruction.order_type in (OrderType.STOP, OrderType.STOP_LIMIT)
+                else None
+            ),
+
+            trailing_offset=(
+                instruction.trailing_offset
+                if instruction.order_type is OrderType.TRAILING_STOP
+                else None
+            ),
+
+            trailing_offset_type=(
+                instruction.trailing_offset_type
+                if instruction.order_type is OrderType.TRAILING_STOP
+                else None
             ),
 
 

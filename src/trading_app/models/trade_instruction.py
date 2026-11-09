@@ -29,6 +29,7 @@ from trading_app.models.order import (
     Side,
     OrderType,
     TimeInForce,
+    TrailingOffsetType,
 )
 
 from trading_app.trading_config import (
@@ -103,6 +104,16 @@ class TradeInstruction:
 
     offset_units: OffsetUnits = OffsetUnits.DOLLARS
 
+    # Stop trigger pricing is configured independently from execution price.
+    stop_price_basis: PriceBasis = PriceBasis.MARKET
+    stop_offset_name: str = ""
+    stop_offset_value: float = 0.0
+    stop_offset_units: OffsetUnits = OffsetUnits.DOLLARS
+
+    # Required by Schwab for TRAILING_STOP orders.
+    trailing_offset: Optional[float] = None
+    trailing_offset_type: Optional[TrailingOffsetType] = None
+
     #
     # Live market
     #
@@ -122,6 +133,9 @@ class TradeInstruction:
     order_price: Optional[float] = None
 
     manual_order_price: Optional[float] = None
+
+    stop_base_price: Optional[float] = None
+    stop_price: Optional[float] = None
 
     #
     # Convenience
@@ -154,6 +168,10 @@ class TradeInstruction:
     @property
     def is_stop_limit(self) -> bool:
         return self.order_type is OrderType.STOP_LIMIT
+
+    @property
+    def requires_stop_price(self) -> bool:
+        return self.order_type in (OrderType.STOP, OrderType.STOP_LIMIT)
 
     @property
     def quantity(self) -> int:

@@ -30,6 +30,8 @@ from trading_app.services.price_calculator import (
 
 from trading_app.trading_config import (
     TradingConfig,
+    PriceBasis,
+    OffsetUnits,
 )
 
 
@@ -97,6 +99,11 @@ class TradeInstructionFactory:
         #
 
         offset = self.config.price_offsets[template.price.offset]
+        stop_offset = (
+            self.config.price_offsets[template.stop_price.offset]
+            if template.stop_price is not None
+            else None
+        )
 
         instruction = TradeInstruction(
 
@@ -150,6 +157,31 @@ class TradeInstructionFactory:
             offset_value=(offset.value),
 
             offset_units=(offset.units),
+
+            stop_price_basis=(
+                template.stop_price.basis
+                if template.stop_price is not None
+                else PriceBasis.MARKET
+            ),
+            stop_offset_name=(
+                template.stop_price.offset
+                if template.stop_price is not None
+                else ""
+            ),
+            stop_offset_value=(stop_offset.value if stop_offset else 0.0),
+            stop_offset_units=(
+                stop_offset.units if stop_offset else OffsetUnits.DOLLARS
+            ),
+            trailing_offset=(
+                template.trailing_price.value
+                if template.trailing_price is not None
+                else None
+            ),
+            trailing_offset_type=(
+                template.trailing_price.type
+                if template.trailing_price is not None
+                else None
+            ),
 
             #
             # Runtime options

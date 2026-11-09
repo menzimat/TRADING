@@ -23,6 +23,7 @@ from trading_app.models.order import (
     Side,
     OrderType,
     TimeInForce,
+    TrailingOffsetType,
 )
 
 from enum import Enum
@@ -97,6 +98,14 @@ class PriceDefinition:
     offset: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class TrailingPriceDefinition:
+
+    type: TrailingOffsetType  # dollars | percent
+
+    value: float
+
+
 # ---------------------------------------------------------
 # Named offsets
 # ---------------------------------------------------------
@@ -151,6 +160,13 @@ class TemplateDefinition:
     quantity: Optional[QuantityDefinition] = None
 
     price: Optional[PriceDefinition] = None
+
+    # The trigger price for STOP and STOP_LIMIT orders. It uses the same
+    # quote-basis/offset calculation as the execution price.
+    stop_price: Optional[PriceDefinition] = None
+
+    # Schwab trailing stops use an offset rather than a fixed stopPrice.
+    trailing_price: Optional[TrailingPriceDefinition] = None
 
     tif: Optional[TimeInForce] = None
 
@@ -306,6 +322,26 @@ class TradingConfig:
                     offset=value["price"].get(
                         "offset"
                     ),
+                ),
+
+                stop_price=(
+                    PriceDefinition(
+                        basis=PriceBasis(value["stop_price"]["basis"].lower()),
+                        offset=value["stop_price"].get("offset"),
+                    )
+                    if value.get("stop_price") is not None
+                    else None
+                ),
+
+                trailing_price=(
+                    TrailingPriceDefinition(
+                        type=TrailingOffsetType[
+                            value["trailing_price"]["type"].upper()
+                        ],
+                        value=float(value["trailing_price"]["value"]),
+                    )
+                    if value.get("trailing_price") is not None
+                    else None
                 ),
 
                 tif=TimeInForce[
@@ -552,4 +588,3 @@ class TradingConfig:
             raise ValueError(
                 f"Unknown quantity alias '{value}'."
             )
-    
