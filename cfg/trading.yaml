@@ -64,6 +64,10 @@ price_offsets:
     value: 0
     units: dollars
 
+  default_stop:
+    value: 10
+    units: percent       # dollars | percent | ticks
+
 
 # ------------------------------------------------------------
 # Hotkey bindings
@@ -412,6 +416,89 @@ templates:
     tif: DAY
 
 
+  buy_stop_limit:
+
+      template_name: "buy_stop_limit"
+
+      template_display_name: "Buy Stop Limit"
+
+      side: BUY
+
+      order_type: STOP_LIMIT
+
+      quantity:
+        type: fixed
+        value: 5000
+
+      price:
+
+        # Schwab's STOP_LIMIT `price`: the limit price after activation.
+        basis: ask
+
+        offset: aggressive
+
+      # Schwab's STOP_LIMIT `stopPrice`: the activation trigger.
+      stop_price:
+
+        basis: ask
+
+        offset: default_stop
+
+      tif: DAY
+
+
+  sell_stop:
+
+      template_name: "sell_stop"
+
+      template_display_name: "Sell Stop"
+
+      side: SELL
+
+      order_type: STOP
+
+      quantity:
+        type: percent
+        value: 100
+
+      # STOP orders execute at market after stop_price activates them.
+      price:
+        basis: market
+        offset: market
+
+      stop_price:
+        basis: bid
+        offset: default
+
+      tif: DAY
+
+
+  sell_trailing_stop:
+
+      template_name: "sell_trailing_stop"
+
+      template_display_name: "Sell Trailing Stop"
+
+      side: SELL
+
+      order_type: TRAILING_STOP
+
+      quantity:
+        type: percent
+        value: 100
+
+      # TRAILING_STOP executes at market. Schwab requires a trailing offset,
+      # not a fixed stop_price. Type may be dollars or percent.
+      price:
+        basis: market
+        offset: market
+
+      trailing_price:
+        type: percent
+        value: 10
+
+      tif: DAY
+
   panic:
 
     action: PANIC_EXIT
@@ -420,5 +507,3 @@ templates:
   refresh_quotes:
 
     action: REFRESH_QUOTES
-
-
