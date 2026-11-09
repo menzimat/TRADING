@@ -101,8 +101,8 @@ class QuoteTable:
         self.symbol_rows: Dict[str, str] = {}
         self.suppressed_symbols = set()
 
-        self.sort_column: Optional[str] = None
-        self.sort_reverse = False
+        self.sort_column: Optional[str] = "volume"
+        self.sort_reverse = True
 
         self.frame = ttk.Frame(parent)
 
@@ -312,6 +312,9 @@ class QuoteTable:
             )
 
             self.symbol_rows[symbol] = iid
+
+        if self.sort_column is not None:
+            self._apply_sort()
 
     def _update_symbol_color(self, row_id):
         symbol = self.tree.item(row_id, "text")
@@ -535,6 +538,10 @@ class QuoteTable:
             self.sort_column = column
             self.sort_reverse = False
 
+        self._apply_sort()
+
+    def _apply_sort(self):
+        """Apply the active column order to all displayed quote rows."""
 
         rows = []
 
@@ -542,10 +549,10 @@ class QuoteTable:
 
             value = self.tree.set(
                 iid,
-                column,
+                self.sort_column,
             )
 
-            rows.append((self._sortable_value(column, value), iid))
+            rows.append((self._sortable_value(self.sort_column, value), iid))
 
 
         # Keep incomplete numerical rows at the end in either sort direction.

@@ -390,7 +390,7 @@ class MomentumTable:
         )
 
         self.sort_selection = tk.StringVar(
-            value="Momentum"
+            value="Total Volume"
         )
 
         controls = ttk.Frame(
