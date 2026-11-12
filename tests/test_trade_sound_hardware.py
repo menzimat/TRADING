@@ -21,8 +21,8 @@ from trading_app.services.trade_sound import (
 )
 
 
-# Device 25 was confirmed by the user to produce audio through PipeWire.
-PIPEWIRE_DEVICE = 24
+# Resolve PipeWire by name because PortAudio device indices can change.
+PIPEWIRE_DEVICE = "pipewire"
 
 
 @pytest.fixture

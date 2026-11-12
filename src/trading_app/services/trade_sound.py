@@ -124,6 +124,7 @@ class TradeSoundService:
 
             self._added_symbol = self._generate_tone( self.settings.scanner_ticker_added)
 
+            device = self._resolve_output_device(self.settings.device)
             self._stream = sd.OutputStream(
                 samplerate=self.settings.sample_rate,
                 channels=1,
@@ -131,7 +132,7 @@ class TradeSoundService:
                 callback=self._audio_callback,
                 blocksize=0,
                 latency="low",
-                device=self.settings.device,
+                device=device,
             )
 
             self._stream.start()
@@ -148,9 +149,67 @@ class TradeSoundService:
                 "Unable to initialize trade sound service; "
                 "trading will continue without audio"
             )
+            self._log_available_devices()
 
             self._stream = None
             self._started = False
+
+    @staticmethod
+    def _resolve_output_device(device: int | str | None) -> int | None:
+        """Resolve configured device names while preserving numeric indices."""
+        if device is None or isinstance(device, int):
+            return device
+
+        requested_name = device.strip()
+        if not requested_name:
+            raise ValueError("Sound device name cannot be empty")
+
+        devices = sd.query_devices()
+        requested_folded = requested_name.casefold()
+        output_devices = [
+            (index, info, str(info.get("name", "")).casefold())
+            for index, info in enumerate(devices)
+            if int(info.get("max_output_channels", 0)) >= 1
+        ]
+
+        # Prefer an exact name, but PortAudio backends can expose a host
+        # device as e.g. "PipeWire: ..." instead of simply "PipeWire".
+        for index, _info, name in output_devices:
+            if name == requested_folded:
+                return index
+
+        for index, _info, name in output_devices:
+            if requested_folded in name:
+                logger.info(
+                    "Resolved sound device name %r to %r (index %d)",
+                    requested_name,
+                    devices[index].get("name", "<unnamed>"),
+                    index,
+                )
+                return index
+
+        raise RuntimeError(
+            f"Output sound device {requested_name!r} was not found"
+        )
+
+    @staticmethod
+    def _log_available_devices() -> None:
+        """Log device names and indices to help correct sound configuration."""
+        try:
+            devices = sd.query_devices()
+        except Exception:
+            logger.exception("Could not query available sound devices")
+            return
+
+        logger.error("Available sound devices (index: name):")
+        for index, info in enumerate(devices):
+            logger.error(
+                "  %d: %s (inputs=%s, outputs=%s)",
+                index,
+                info.get("name", "<unnamed>"),
+                info.get("max_input_channels", 0),
+                info.get("max_output_channels", 0),
+            )
 
     # ------------------------------------------------------------------
     # Waveform generation

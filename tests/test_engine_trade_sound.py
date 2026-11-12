@@ -33,14 +33,14 @@ from trading_app.schwab_streamer import SchwabStreamer
 from tests.test_schwab_streamer_fill import make_fill_record
 
 
-PIPEWIRE_DEVICE = 24
+PIPEWIRE_DEVICE = "pipewire"
 
 
 @pytest.fixture
 def real_trade_sound():
     """
     Create the same TradeSoundService configuration used by Engine,
-    explicitly selecting the known-working PipeWire device.
+    explicitly selecting the PipeWire device by name.
     """
 
     settings = TradeSoundSettings(

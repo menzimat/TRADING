@@ -1,10 +1,12 @@
 import numpy as np
+from unittest.mock import MagicMock
 
 from trading_app.services.trade_sound import (
     ToneSettings,
     TradeSoundService,
     TradeSoundSettings,
 )
+from trading_app.services import trade_sound
 
 
 def test_buy_and_sell_waveforms_are_generated_without_starting_audio():
@@ -99,5 +101,61 @@ def test_disabled_service_playback_is_nonblocking():
 
     service.play_buy()
     service.play_sell()
+
+    service.close()
+
+
+def test_string_device_name_resolves_to_matching_output_index(monkeypatch):
+    devices = [
+        {"name": "Monitor", "max_output_channels": 0},
+        {"name": "PipeWire", "max_output_channels": 2},
+    ]
+    monkeypatch.setattr(trade_sound.sd, "query_devices", lambda: devices)
+    stream = MagicMock()
+    monkeypatch.setattr(trade_sound.sd, "OutputStream", lambda **kwargs: stream)
+
+    service = TradeSoundService(
+        TradeSoundSettings(enabled=True, device="pipewire")
+    )
+
+    assert service._started is True
+    assert service._stream is stream
+    stream.start.assert_called_once()
+
+    service.close()
+
+
+def test_string_device_name_matches_backend_name_containing_pipewire(monkeypatch):
+    devices = [
+        {"name": "PipeWire: ALSA Output", "max_output_channels": 2},
+    ]
+    monkeypatch.setattr(trade_sound.sd, "query_devices", lambda: devices)
+    stream = MagicMock()
+    output_stream = MagicMock(return_value=stream)
+    monkeypatch.setattr(trade_sound.sd, "OutputStream", output_stream)
+
+    service = TradeSoundService(
+        TradeSoundSettings(enabled=True, device="PipeWire")
+    )
+
+    assert service._started is True
+    assert output_stream.call_args.kwargs["device"] == 0
+    service.close()
+
+
+def test_numeric_device_index_is_passed_through(monkeypatch):
+    query_devices = MagicMock(side_effect=AssertionError("should not query"))
+    monkeypatch.setattr(trade_sound.sd, "query_devices", query_devices)
+    stream = MagicMock()
+    output_stream = MagicMock(return_value=stream)
+    monkeypatch.setattr(trade_sound.sd, "OutputStream", output_stream)
+
+    service = TradeSoundService(
+        TradeSoundSettings(enabled=True, device=21)
+    )
+
+    assert service._started is True
+    assert output_stream.call_args.kwargs["device"] == 21
+    query_devices.assert_not_called()
 
     service.close()
