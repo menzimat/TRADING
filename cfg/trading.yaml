@@ -202,8 +202,8 @@ hotkeys:
 #
 # Devices:
 #   device: null # default
-#   device: 3   #Jabra
-#   device: 24   # PipeWire ALSA
+#   device: 3   # numeric PortAudio device index
+#   device: "PipeWire" # device name (case-insensitive exact match)
 #  
 #
 # ------------------------------------------------------------
@@ -211,7 +211,7 @@ hotkeys:
 sounds:
 
   enabled: true
-  device: 24
+  device: pipewire # numeric PortAudio device index; names such as "PipeWire" are also supported
   sample_rate: 48000
 
   # Maximum number of pending notifications.
